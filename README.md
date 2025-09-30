@@ -29,14 +29,40 @@
 ```
 secure-messaging-channel/
 ├─ backend/
-│ ├─ auth/ # Registro, login e hash seguro de senhas
-│ ├─ crypto/ # Lógica de criptografia RSA e IDEA
-│ ├─ routes/ # Endpoints da API de comunicação
-│ └─ database/ # Modelos e sessão do banco de dados
-├─ tests/
-│ └─ unit/ # Testes unitários de autenticação e criptografia
+│  ├─ __init__.py
+│  ├─ main.py                     # ponto de entrada da API (FastAPI)
+│  │
+│  ├─ auth/                       # autenticação de usuários
+│  │  ├─ __init__.py
+│  │  ├─ models.py                # modelos de usuário
+│  │  ├─ routes.py                # rotas de login e cadastro
+│  │  └─ security.py              # hash de senha e geração de tokens
+│  │
+│  ├─ crypto/                     # lógica de criptografia
+│  │  ├─ __init__.py
+│  │  ├─ rsa_manager.py           # geração e troca de chaves RSA
+│  │  └─ idea_manager.py          # criptografia e descriptografia IDEA
+│  │
+│  ├─ database/                   # conexão e inicialização do banco
+│  │  ├─ __init__.py
+│  │  └─ connection.py
+│  │
+│  └─ routes/                     # rotas principais do sistema
+│     ├─ __init__.py
+│     └─ messaging.py             # envio/recebimento de mensagens
+│
+├─ tests/                         # testes automatizados
+│  ├─ __init__.py
+│  ├─ test_auth.py
+│  ├─ test_crypto.py
+│  └─ test_messaging.py
+│
+├─ .gitignore
+├─ Makefile
+├─ LICENSE
+├─ README.md
 ├─ requirements.txt
-└─ README.md
+└─ .env.example                  
 ```
 
 ---
@@ -72,12 +98,24 @@ secure-messaging-channel/
 
 ## 🧭 Melhorias Futuras
 
-- 🔄 Suporte completo a conversas em grupo  
 - 📱 Interface web simples com Streamlit ou React  
 - 🧠 Autenticação multifator (MFA)  
 - 📊 Logs e monitoramento de segurança  
 
 ---
+
+## 👩‍💻 Equipe de Desenvolvimento
+
+Este projeto foi desenvolvido pelos estudantes do curso de Sistemas de Informação da **Universidade do Estado do Amazonas (UEA)**:
+
+| Nome | E-mail |
+|------|--------|
+| 👩‍💻 Ana Beatriz Maciel Nunes | [abmn.snf23@uea.edu.br](mailto:abmn.snf23@uea.edu.br) |
+| 👨‍💻 Marcelo Heitor De Almeida Lira | [mhdal.snf23@uea.edu.br](mailto:mhdal.snf23@uea.edu.br) |
+| 👨‍💻 Fernando Luiz Da Silva Freire | [fldsf.snf23@uea.edu.br](mailto:fldsf.snf23@uea.edu.br) |
+| 👩‍💻 Juliana Ballin Lima | [jbl.snf23@uea.edu.br](mailto:jbl.snf23@uea.edu.br) |
+
+
 
 ## 📜 Licença
 

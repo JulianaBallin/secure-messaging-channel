@@ -1,0 +1,140 @@
+# ================================
+# 🐍 Python & Virtualenv
+# ================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.pdb
+*.pkl
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.venv311/
+
+# Byte-compiled / optimized / DLL files
+*.pyc
+*.pyo
+*.pyd
+
+# ================================
+# 📦 Dependências e builds
+# ================================
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+pip-wheel-metadata/
+wheels/
+*.manifest
+*.spec
+
+# ================================
+# 🧪 Testes e Cobertura
+# ================================
+.coverage
+coverage.xml
+htmlcov/
+.pytest_cache/
+.tox/
+nosetests.xml
+test-results.xml
+
+# ================================
+# 🛠️ Logs e Debug
+# ================================
+*.log
+logs/
+debug.log
+
+# ================================
+# 🔐 Configurações e Credenciais
+# ================================
+.env
+.env.*
+*.key
+*.pem
+*.crt
+*.csr
+*.pfx
+
+# ================================
+# 🐳 Docker
+# ================================
+docker-compose.override.yml
+docker-compose.local.yml
+.docker/
+*.tar
+
+# ================================
+# 📦 IDEs e Editores
+# ================================
+# VSCode
+.vscode/
+.history/
+.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+
+# ================================
+# 📁 Banco de Dados / Dados
+# ================================
+*.db
+*.sqlite3
+*.sqlite
+*.bak
+*.sql
+data/
+backup/
+tmp/
+
+# ================================
+# 📑 Documentação e Arquivos Temporários
+# ================================
+*.md.html
+*.docx~
+*.pdf~
+*.tmp
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ================================
+# 📊 Notebooks Jupyter
+# ================================
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ================================
+# 🧪 Ferramentas de Tipagem / Lint
+# ================================
+.mypy_cache/
+.dmypy.json
+ruff_cache/
+.pyre/
+.pytype/
+
+# ================================
+# 🐙 Git e CI/CD
+# ================================
+.gitignore~
+.gitconfig
+*.orig
+*.rej
+
+# ================================
+# 🧰 Outros
+# ================================
+*.bak
+*.old
+*.save
+.cache/
+tmp/
