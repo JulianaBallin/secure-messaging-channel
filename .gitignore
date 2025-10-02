@@ -15,6 +15,7 @@ venv/
 env/
 ENV/
 .venv311/
+seg/
 
 # Byte-compiled / optimized / DLL files
 *.pyc
