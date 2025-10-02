@@ -2,37 +2,29 @@
 rsa_manager.py
 --------------
 
-Implements RSA key generation, serialization, and management.  
-This module handles asymmetric encryption tasks such as key pair creation and 
-public/private key serialization for secure key exchange between users.
-
-Functions:
-    - generate_rsa_keys(): Generates a new RSA private/public key pair.
-    - serialize_keys(private_key, public_key): Serializes keys into PEM format.
+Handles RSA key generation, encryption, and decryption for secure key exchange.
 """
 
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_OAEP
+from base64 import b64encode, b64decode
 
-from cryptography.hazmat.primitives.asymmetric import rsa
-from cryptography.hazmat.primitives import serialization
+def generate_rsa_keypair() -> tuple[bytes, bytes]:
+    """Generate a new RSA public/private key pair."""
+    key = RSA.generate(2048)
+    private_key = key.export_key()
+    public_key = key.publickey().export_key()
+    return public_key, private_key
 
-def generate_rsa_keys():
-    """Gera um par de chaves RSA (privada e pública)."""
-    private_key = rsa.generate_private_key(
-        public_exponent=65537,
-        key_size=2048
-    )
-    public_key = private_key.public_key()
-    return private_key, public_key
+def encrypt_with_rsa(public_key: bytes, data: bytes) -> str:
+    """Encrypts data with the given RSA public key."""
+    key = RSA.import_key(public_key)
+    cipher = PKCS1_OAEP.new(key)
+    encrypted = cipher.encrypt(data)
+    return b64encode(encrypted).decode()
 
-def serialize_keys(private_key, public_key):
-    """Serializa as chaves para salvar ou transmitir."""
-    private_pem = private_key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.TraditionalOpenSSL,
-        encryption_algorithm=serialization.NoEncryption()
-    )
-    public_pem = public_key.public_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PublicFormat.SubjectPublicKeyInfo
-    )
-    return private_pem, public_pem
+def decrypt_with_rsa(private_key: bytes, encrypted_data: str) -> bytes:
+    """Decrypts data with the given RSA private key."""
+    key = RSA.import_key(private_key)
+    cipher = PKCS1_OAEP.new(key)
+    return cipher.decrypt(b64decode(encrypted_data))

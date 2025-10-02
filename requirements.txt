@@ -9,7 +9,8 @@ pycryptodome==3.20.0       # Implementação do algoritmo IDEA e outras cifras
 # --- Autenticação e Segurança ---
 passlib==1.7.4             # Hash seguro de senhas (SHA-256 + salt)
 python-jose==3.3.0         # JWT tokens (opcional para autenticação baseada em token)
-bcrypt==4.2.0              # Algoritmo bcrypt (opcional para senhas mais seguras)
+bcrypt==4.0.1
+pyjwt>=2.8.0              # Algoritmo bcrypt (opcional para senhas mais seguras)
 
 # --- Banco de Dados ---
 sqlalchemy==2.0.34         # ORM para manipulação de dados

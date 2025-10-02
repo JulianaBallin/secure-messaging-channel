@@ -14,24 +14,19 @@ from Crypto.Cipher import IDEA
 from Crypto.Random import get_random_bytes
 from base64 import b64encode, b64decode
 
-# IDEA exige chave de 16 bytes
-SECRET_KEY = b"1234567890ABCDEF" 
+def generate_idea_key() -> bytes:
+    """Generate a secure 16-byte IDEA key."""
+    return get_random_bytes(16)
 
 def pad(data: bytes) -> bytes:
-    """Preenche o bloco de dados para múltiplos de 8 bytes (necessário no IDEA)."""
     while len(data) % 8 != 0:
         data += b" "
     return data
 
-def encrypt_message(message: str) -> str:
-    """Encrypts a message using IDEA symmetric encryption."""
-    cipher = IDEA.new(SECRET_KEY, IDEA.MODE_ECB)
-    padded_message = pad(message.encode())
-    encrypted = cipher.encrypt(padded_message)
-    return b64encode(encrypted).decode()
+def encrypt_message(message: str, key: bytes) -> str:
+    cipher = IDEA.new(key, IDEA.MODE_ECB)
+    return b64encode(cipher.encrypt(pad(message.encode()))).decode()
 
-def decrypt_message(ciphertext: str) -> str:
-    """Decrypts a ciphertext message back into plaintext."""
-    cipher = IDEA.new(SECRET_KEY, IDEA.MODE_ECB)
-    decrypted = cipher.decrypt(b64decode(ciphertext))
-    return decrypted.decode().rstrip(" ")
+def decrypt_message(encrypted: str, key: bytes) -> str:
+    cipher = IDEA.new(key, IDEA.MODE_ECB)
+    return cipher.decrypt(b64decode(encrypted)).decode().rstrip(" ")

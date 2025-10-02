@@ -59,3 +59,8 @@ update:
 	$(PIP) install --upgrade -r requirements.txt
 	@echo "📦 Dependências atualizadas!"
 
+# -------------------------
+# 📦 Iniciar Banco de Dados
+# -------------------------
+db-init:
+	python init_db.py

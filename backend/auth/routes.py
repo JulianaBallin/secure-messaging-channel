@@ -18,16 +18,15 @@ from fastapi import APIRouter, HTTPException, status
 from jose import jwt
 from pydantic import BaseModel
 from backend.auth.security import hash_password, verify_password
+from backend.config import SECRET_KEY, ACCESS_TOKEN_EXPIRE_MINUTES
 
 # JWT Config
-SECRET_KEY = "troque-por-uma-chave-segura"  # 🔐 deve ser definido no .env
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 router = APIRouter()
 
 # -------------------------
-# 📦 MODELOS Pydantic
+# MODELOS Pydantic
 # -------------------------
 
 class UserCreate(BaseModel):
@@ -51,7 +50,7 @@ FAKE_DB = {}
 ONLINE_USERS = {}
 
 # -------------------------
-# 🔑 Registro de Usuário
+# Registro de Usuário
 # -------------------------
 
 @router.post("/register", status_code=201)
@@ -70,7 +69,7 @@ async def register_user(user: UserCreate):
     return {"message": f"✅ User '{user.username}' registered successfully."}
 
 # -------------------------
-# 🔑 Login e emissão de JWT
+# Login e emissão de JWT
 # -------------------------
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
@@ -101,7 +100,7 @@ async def login(user: UserLogin):
     return {"access_token": access_token, "token_type": "bearer"}
 
 # -------------------------
-# 👥 Lista de Usuários Online
+# Lista de Usuários Online
 # -------------------------
 
 @router.get("/online", response_model=List[OnlineUser])
