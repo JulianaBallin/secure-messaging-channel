@@ -23,10 +23,8 @@ router = APIRouter()
 # Simulated message database
 MESSAGES = []
 
-# -------------------------
-# 📦 Modelos Pydantic
-# -------------------------
 
+# Modelos Pydantic
 class MessageCreate(BaseModel):
     sender: str
     receiver: str
@@ -39,10 +37,8 @@ class MessageResponse(BaseModel):
     content_decrypted: str
     timestamp: datetime
 
-# -------------------------
-# 📨 Envio de Mensagem Criptografada
-# -------------------------
 
+# Envio de Mensagem Criptografada
 @router.post("/send", status_code=201)
 async def send_message(msg: MessageCreate):
     """
@@ -74,10 +70,8 @@ async def send_message(msg: MessageCreate):
         "timestamp": timestamp.isoformat()
     }
 
-# -------------------------
-# 📬 Caixa de Entrada (Inbox)
-# -------------------------
 
+# Caixa de Entrada (Inbox)
 @router.get("/inbox/{username}", response_model=List[MessageResponse])
 async def get_inbox(username: str):
     """

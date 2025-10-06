@@ -9,6 +9,9 @@ VENV = .venv
 PYTHON = $(VENV)/bin/python
 PIP = $(VENV)/bin/pip
 
+# Diretórios a serem ignorados na listagem
+IGNORE_DIRS = __pycache__|.venv|venv|seg|.mypy_cache|.pytest_cache|.git|.idea|__pypackages__
+
 # -------------------------
 # 📦 Setup inicial do projeto
 # -------------------------
@@ -60,7 +63,38 @@ update:
 	@echo "📦 Dependências atualizadas!"
 
 # -------------------------
-# 📦 Iniciar Banco de Dados
+# 🗄️ Iniciar Banco de Dados
 # -------------------------
 db-init:
 	python init_db.py
+
+# -------------------------
+# 🌳 Exibir estrutura do projeto (sem caches/venv)
+# -------------------------
+tree:
+	@echo "📁 Estrutura limpa do projeto:"
+	@tree -I "$(IGNORE_DIRS)"
+
+# -------------------------
+# 🌳 Salvar estrutura do projeto em arquivo
+# -------------------------
+tree-save:
+	@echo "📄 Salvando estrutura limpa em estrutura.txt..."
+	@tree -I "$(IGNORE_DIRS)" > estrutura.txt
+	@echo "✅ Arquivo 'estrutura.txt' gerado com sucesso!"
+
+# -------------------------
+# 🧰 Ajuda
+# -------------------------
+help:
+	@echo "Comandos disponíveis:"
+	@echo "  make setup       → cria venv e instala dependências"
+	@echo "  make run         → executa o servidor FastAPI"
+	@echo "  make test        → executa testes unitários"
+	@echo "  make coverage    → gera relatório de cobertura"
+	@echo "  make lint        → verifica código com Ruff e MyPy"
+	@echo "  make clean       → remove caches e temporários"
+	@echo "  make update      → atualiza dependências"
+	@echo "  make db-init     → inicializa o banco de dados local"
+	@echo "  make tree        → mostra estrutura do projeto"
+	@echo "  make tree-save   → salva estrutura limpa em estrutura.txt"

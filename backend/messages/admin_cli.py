@@ -1,61 +1,54 @@
 """
-cli.py (mensagens)
-------------------
+admin_cli.py (mensagens)
+------------------------
 
-Implements peer-to-peer encrypted messaging between two users using RSA + IDEA.
+CLI administrativo para testar criptografia e armazenamento local de mensagens.
+Uso apenas para depuração no ambiente do servidor.
 """
 
 from sqlalchemy.orm import Session
 from backend.database.connection import SessionLocal
 from backend.auth.models import User, Message
-from backend.crypto.idea_manager import generate_idea_key, encrypt_message, decrypt_message
-from backend.crypto.rsa_manager import encrypt_with_rsa, decrypt_with_rsa
+from backend.crypto.idea_manager import generate_idea_key, encrypt_message
+from backend.crypto.rsa_manager import encrypt_with_rsa
 
 def start_conversation(sender_username: str):
-    """Initiate an encrypted conversation between two users."""
     db: Session = SessionLocal()
 
     users = db.query(User).filter(User.username != sender_username).all()
     if not users:
-        print("⚠️ Nenhum outro usuário cadastrado para conversar.")
+        print("⚠️ Nenhum outro usuário cadastrado.")
         return
 
     print("\n=== 👥 Usuários disponíveis ===")
     for u in users:
         print(f"- {u.username}")
 
-    receiver_username = input("👉 Escolha o usuário com quem deseja conversar: ").strip()
+    receiver_username = input("👉 Escolha o destinatário: ").strip()
     receiver = db.query(User).filter(User.username == receiver_username).first()
-
     if not receiver:
         print("❌ Usuário não encontrado.")
         return
 
-    message_text = input("💬 Digite sua mensagem: ").strip()
-
-    # ✅ 1. Gerar chave IDEA
+    message_text = input("💬 Digite a mensagem: ").strip()
     idea_key = generate_idea_key()
-
-    # ✅ 2. Criptografar a mensagem com IDEA
     encrypted_message = encrypt_message(message_text, idea_key)
-
-    # ✅ 3. Criptografar a chave IDEA com a chave pública do destinatário
     encrypted_idea_key = encrypt_with_rsa(receiver.public_key, idea_key)
 
-    # ✅ 4. Salvar no banco
     sender = db.query(User).filter(User.username == sender_username).first()
     message = Message(
         sender_id=sender.id,
         receiver_id=receiver.id,
-        content_encrypted=encrypted_message
+        content_encrypted=encrypted_message,
+        encrypted_key=encrypted_idea_key  # futura implementação
     )
     db.add(message)
     db.commit()
 
-    print("✅ Mensagem enviada com sucesso e armazenada de forma segura!")
+    print("✅ Mensagem criptografada e armazenada com sucesso!")
+
 
 def read_inbox(current_user: str):
-    """Read and decrypt all messages for the current user."""
     db: Session = SessionLocal()
     user = db.query(User).filter(User.username == current_user).first()
 
@@ -67,7 +60,7 @@ def read_inbox(current_user: str):
     print("\n=== 📥 Caixa de Entrada ===")
     for m in messages:
         sender = db.query(User).filter(User.id == m.sender_id).first()
-        # Aqui precisaríamos da chave IDEA criptografada salva junto (faremos na versão 2)
         print(f"📨 De: {sender.username}")
         print(f"🔐 Conteúdo criptografado: {m.content_encrypted}")
-        print("⚠️ (Descriptografia completa será implementada junto ao armazenamento da chave IDEA)\n")
+        print(f"🗝️ Chave IDEA criptografada: {getattr(m, 'encrypted_key', 'não armazenada')}")
+        print()

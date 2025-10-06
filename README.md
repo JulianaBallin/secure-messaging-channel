@@ -30,39 +30,66 @@
 secure-messaging-channel/
 ├─ backend/
 │  ├─ __init__.py
-│  ├─ main.py                     # ponto de entrada da API (FastAPI)
+│  ├─ main.py                     # ponto de entrada CLI principal (não FastAPI por enquanto)
 │  │
-│  ├─ auth/                       # autenticação de usuários
+│  ├─ auth/                       
 │  │  ├─ __init__.py
-│  │  ├─ models.py                # modelos de usuário
-│  │  ├─ routes.py                # rotas de login e cadastro
-│  │  └─ security.py              # hash de senha e geração de tokens
+│  │  ├─ models.py                # modelos ORM (User, Message, Group, GroupMember)
+│  │  ├─ routes.py                # rotas auxiliares (se necessário futuramente)
+│  │  ├─ security.py              # hash seguro de senhas e verificação
+│  │  └─ auth_jwt.py              # geração e validação de tokens JWT
 │  │
-│  ├─ crypto/                     # lógica de criptografia
+│  ├─ crypto/                     
 │  │  ├─ __init__.py
-│  │  ├─ rsa_manager.py           # geração e troca de chaves RSA
-│  │  └─ idea_manager.py          # criptografia e descriptografia IDEA
+│  │  ├─ rsa_manager.py           # geração e uso de chaves RSA
+│  │  └─ idea_manager.py          # criptografia IDEA para mensagens
 │  │
-│  ├─ database/                   # conexão e inicialização do banco
+│  ├─ database/                  
 │  │  ├─ __init__.py
-│  │  └─ connection.py
+│  │  ├─ connection.py            # engine e sessão do banco (SQLite)
+│  │  └─ queries/                 # 📂 consultas diretas ao banco (isoladas)
+│  │     ├─ __init__.py
+│  │     ├─ users.py              # consultas de usuários
+│  │     ├─ messages.py           # consultas de mensagens
+│  │     └─ groups.py             # consultas de grupos
 │  │
-│  └─ routes/                     # rotas principais do sistema
+│  ├─ server/                     # 🌐 servidor asyncio (TCP)
+│  │  ├─ __init__.py
+│  │  ├─ server.py                # servidor que gerencia conexões e mensagens
+│  │  └─ client.py                # cliente simples para testes individuais (auxiliar)
+│  │
+│  ├─ messages/                   # lógica de mensagens (futuramente ampliada)
+│  │  └─ cli.py
+│  │
+│  ├─ groups/                     # lógica de grupos (admin, membros, etc)
+│  │  └─ cli.py
+│  │
+│  └─ routes/                     
 │     ├─ __init__.py
-│     └─ messaging.py             # envio/recebimento de mensagens
+│     └─ messaging.py             # rotas internas do sistema (se migrarmos p/ FastAPI depois)
 │
-├─ tests/                         # testes automatizados
+├─ keys/                          # 📂 chaves privadas dos usuários (armazenadas localmente)
+│
+├─ logs/                          # 📂 logs detalhados de segurança e consultas
+│  └─ security.log
+│
+├─ tests/                         
 │  ├─ __init__.py
 │  ├─ test_auth.py
 │  ├─ test_crypto.py
 │  └─ test_messaging.py
 │
+├─ run_cli.py                     # 🚀 CLI principal com cadastro, login e consultas
+├─ run_queries.py                 # utilitário para consultas rápidas ao banco
+├─ init_db.py                     # inicializa o banco de dados
+├─ checklist.MD                   # lista de funcionalidades implementadas/faltantes
 ├─ .gitignore
 ├─ Makefile
 ├─ LICENSE
 ├─ README.md
 ├─ requirements.txt
 └─ .env.example                  
+     
 ```
 
 ---

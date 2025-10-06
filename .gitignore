@@ -63,6 +63,11 @@ debug.log
 *.crt
 *.csr
 *.pfx
+keys/
+logs/
+*.pem
+*.log
+
 
 # ================================
 # 🐳 Docker

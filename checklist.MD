@@ -1,108 +1,154 @@
-# 🛡️ Checklist de Desenvolvimento – CipherTalk
+# 🧩 CipherTalk – Checklist de Implementação e Segurança
 
-## ✅ 1. Estrutura Inicial do Projeto
-- [x] Criar repositório `secure-messaging-channel`
-- [x] Adicionar `README.md` com descrição do projeto
-- [x] Criar `LICENSE`
-- [x] Gerar `.gitignore` completo
-- [x] Criar `requirements.txt`
-- [x] Estruturar diretórios principais:
-  - `backend/auth/`
-  - `backend/crypto/`
-  - `backend/database/`
-  - `backend/messages/`
-  - `backend/groups/`
-  - `backend/server/`
-  - `tests/`
+**Status atual:** sistema funcional com comunicação segura (TLS), registro de usuários com RSA e armazenamento seguro no banco.  
+**Objetivo final:** mensageria criptografada ponta a ponta (E2EE), multiusuário e escalável.
 
 ---
 
-## ✅ 2. Banco de Dados (SQLite)
-- [x] Configurar conexão com SQLite usando SQLAlchemy
-- [x] Criar script `init_db.py` para geração do banco (`cipher_talk.db`)
-- [x] Estruturar tabelas:
-  - `users` → credenciais, chaves públicas/privadas, data de criação
-  - `messages` → mensagens enviadas (armazenadas criptografadas)
-  - `groups` → metadados de grupos
-  - `group_members` → relação usuários ↔ grupos
-- [x] Confirmar criação com `inspect(engine).get_table_names()`
+## ✅ 1. Estrutura Geral
+
+- [x] Estrutura modular (`backend/`, `client/`, `keys/`, `logs/`)
+- [x] Módulos separados por responsabilidade (auth, crypto, server, etc.)
+- [x] CLI principal com menus base (`run_cli.py`)
+- [x] Makefile com targets de setup, test, run e lint
+- [x] `.gitignore` configurado para excluir chaves, caches e ambientes virtuais
 
 ---
 
-## ✅ 3. Autenticação Segura
-- [x] Criar hash de senha seguro com `passlib[bcrypt]`
-- [x] Validar políticas de senha:
-  - Mínimo 8 caracteres
-  - Pelo menos 1 maiúscula
-  - Pelo menos 1 número
-  - Pelo menos 1 caractere especial
-- [x] Restringir nome de usuário (sem acentos/caracteres especiais, apenas `_`)
-- [x] Garantir unicidade de usernames no banco
-- [x] Armazenar apenas hash de senha no banco
-- [x] Carregar variáveis sensíveis com `os.getenv()` (`.env`)
+## ⚙️ 2. Backend – Servidor e Banco de Dados
+
+### 🧱 Servidor (`backend/server/server.py`)
+- [x] Servidor assíncrono (asyncio) com suporte multiusuário
+- [x] Comunicação segura via **TLS (SSL)**
+- [x] Certificados gerados automaticamente (`cert.pem`, `key.pem`)
+- [x] Liberação automática de porta ocupada
+- [x] Logging detalhado (`logs/server.log`)
+- [x] Modularização com `handlers.py`
+- [x] Criação automática de banco (`ensure_database()` com cores ANSI)
+
+🔒 **Segurança atual:**
+- [x] Canal de transporte criptografado (TLS 1.2+)
+- [x] Hash seguro de senhas
+- [x] Tokens JWT com expiração
+- [x] Armazenamento de chaves públicas no servidor
+- [x] Chaves privadas mantidas apenas localmente
+
+🧩 **Melhorias futuras:**
+- [ ] Limite de conexões por IP (proteção DDoS)
+- [ ] Rotação automática de certificados TLS
+- [ ] Assinatura digital de mensagens (RSA + SHA256)
+- [ ] Criptografia de integridade (HMAC)
+- [ ] Handler completo de grupos (broadcast e permissões)
 
 ---
 
-## ✅ 4. Servidor Assíncrono Seguro (`asyncio`)
-- [x] Criar servidor TCP assíncrono (`backend/server/server.py`)
-- [x] Implementar criação de usuário (`action: register`)
-- [x] Implementar login (`action: login`) com validação de hash
-- [x] Gerar tokens JWT com expiração (30 min)
-- [x] Validar tokens em todas as mensagens
-- [x] Recusar conexões com token inválido/expirado
-- [x] Gerenciar estado de usuários online
-- [x] Armazenar mensagens se usuário estiver offline e entregar no login
-- [x] Logger de eventos importantes (login, logout, mensagem entregue/salva, erros)
-- [x] Corrigir bug de encoding UTF-8 em respostas do servidor
-- [x] Resolver conflito de porta `[Errno 98] address already in use`
+## 🗄️ 3. Banco de Dados (SQLite via SQLAlchemy)
+
+- [x] Banco fixo em `backend/database/cipher_talk.db`
+- [x] Modelos ORM: `User`, `Message`, `Group`, `GroupMember`
+- [x] Criação automática via `Base.metadata.create_all()`
+- [x] Sessões seguras (`SessionLocal`)
+- [x] Caminho absoluto configurado em `connection.py`
+
+🧩 **Faltante:**
+- [ ] Migração para PostgreSQL (escala real)
+- [ ] Criptografia de dados (SQLCipher)
+- [ ] Índices otimizados
+- [ ] Tabela de auditoria (ações, IPs, timestamps)
 
 ---
 
-## ✅ 5. Cliente CLI
-- [x] Criar cliente assíncrono (`backend/server/client.py`)
-- [x] Menu interativo:
-  - [x] Criar novo usuário
-  - [x] Fazer login
-  - [x] Sair
-- [x] Conectar ao servidor e receber token JWT
-- [x] Enviar mensagens autenticadas
-- [x] Receber mensagens em tempo real
-- [x] Exibir mensagens armazenadas ao logar
-- [x] Corrigir `JSONDecodeError` ao lidar com respostas não-JSON
-- [x] Melhorar UX com tratamento de erros de rede e autenticação
+## 🔐 4. Criptografia – RSA + IDEA
+
+- [x] RSA 2048 bits (par de chaves público/privado)
+- [x] IDEA 128 bits para mensagens simétricas
+- [x] Chave IDEA cifrada com RSA antes do envio
+- [x] Armazenamento seguro das chaves privadas (`chmod 600`)
+- [x] E2EE parcial já implementado
+
+🧩 **Faltante:**
+- [ ] Assinatura digital (autenticidade)
+- [ ] Troca de chaves efêmera (Diffie-Hellman)
+- [ ] Armazenamento seguro de metadados cifrados
+- [ ] Rotação/revogação de chaves RSA
 
 ---
 
-## 📁 6. Consultas ao Banco (novo módulo)
-Criar pasta dedicada a consultas: `backend/database/queries/`
+## 👥 5. Autenticação e Autorização
 
-Funções planejadas:
-- [ ] `get_all_users()` – retorna todos os usuários e status (online/offline)
-- [ ] `get_user_by_username(username)` – busca usuário específico
-- [ ] `get_all_groups()` – lista todos os grupos existentes
-- [ ] `get_group_members(group_id)` – lista de membros de um grupo
-- [ ] `get_user_messages(user_id)` – histórico completo de mensagens de um usuário
-- [ ] `get_offline_messages(user_id)` – mensagens não lidas
+- [x] Login e registro com hash de senha e JWT
+- [x] Políticas de senha forte
+- [x] Nomes de usuário únicos e validados
+- [x] Tokens JWT expiram após 30 min
+- [x] Tentativas de login registradas
 
----
-
-## 🔐 Próximos Passos (planejados)
-- [ ] Implementar criptografia automática RSA + IDEA no cliente
-- [ ] Criptografia ponta a ponta em conversas em par e grupos
-- [ ] Estrutura de grupos com:
-  - [ ] Criação e exclusão
-  - [ ] Adição/remoção de membros
-  - [ ] Promoção a admin e regeneração de chaves
-- [ ] Caixa de mensagens com filtros (par vs grupo, lidas vs não lidas)
-- [ ] Lógica de histórico por usuário e por grupo
-- [ ] Logs detalhados de segurança e chaves
-- [ ] Interface de linha de comando para gerenciamento de grupos
+🧩 **Faltante:**
+- [ ] Logout e revogação de tokens
+- [ ] Controle de múltiplas sessões por usuário
+- [ ] Limite de tentativas (anti-brute force)
+- [ ] Refresh tokens e reautenticação
+- [ ] Logs de auditoria detalhados
 
 ---
 
-📌 **Status atual:**  
-✅ Banco de dados funcionando  
-✅ Servidor assíncrono seguro com JWT  
-✅ Criação e login de usuários com hash  
-✅ Envio e recebimento de mensagens com autenticação  
-✅ Estrutura pronta para próxima etapa: criptografia ponta a ponta e lógica de grupos
+## 💬 6. Clientes (CLI) – Comunicação Segura
+
+- [x] `client/auth/signup_cli.py`: registro TLS + RSA
+- [x] Criação local de chave privada
+- [x] Transmissão segura (JSON via TLS)
+- [ ] `client/auth/login_cli.py`: login com TLS + JWT
+- [ ] `client/messages/send_cli.py`: envio de mensagens E2EE
+- [ ] `client/messages/read_cli.py`: leitura e decriptação local
+- [ ] `client/groups/manage_cli.py`: administração de grupos
+- [ ] `client/utils/session_manager.py`: persistência de tokens
+
+---
+
+## 🔄 7. Escalabilidade e Multiusuário
+
+- [x] Multiusuário em tempo real (StreamWriter por conexão)
+- [x] Armazenamento de mensagens offline
+- [x] Lista de usuários online/offline
+- [ ] Suporte a Redis (cache/sessões)
+- [ ] PostgreSQL (banco distribuído)
+- [ ] Balanceamento de carga (múltiplas instâncias)
+- [ ] Containerização (Docker + Nginx TLS passthrough)
+- [ ] API REST/GraphQL futura
+
+---
+
+## 🧠 8. Segurança Avançada
+
+| Categoria | Implementado | Faltante |
+|------------|---------------|-----------|
+| Transporte | ✅ TLS ativo | 🔄 Certificado CA externo |
+| Ponta a ponta | ⚙️ Parcial (RSA + IDEA) | 🔒 Assinatura digital e autenticação forte |
+| Armazenamento | ✅ Hash e chaves locais | 🔄 Criptografia de logs e mensagens |
+| Autenticação | ✅ JWT | 🔄 Roles, refresh tokens |
+| Logs | ✅ `logs/server.log` | 🔄 Registro de ataques e erros TLS |
+
+---
+
+## 📈 9. Próximos Passos (Ordem Ideal)
+
+| Etapa | Descrição | Objetivo |
+|-------|------------|----------|
+| 1️⃣ | Implementar `client/auth/login_cli.py` | Login seguro com TLS + JWT |
+| 2️⃣ | Criar `client/messages/send_cli.py` e `read_cli.py` | Mensagens E2EE completas |
+| 3️⃣ | Adicionar `handlers_groups.py` | Criação e administração de grupos |
+| 4️⃣ | Assinatura digital RSA | Autenticidade e integridade |
+| 5️⃣ | Migração para PostgreSQL + Redis | Escalabilidade |
+| 6️⃣ | API REST paralela | Integração com web/mobile |
+
+---
+
+## 🔎 Resumo
+
+> O CipherTalk já possui:
+> - Servidor seguro (TLS + multiusuário)
+> - Registro funcional via CLI com RSA
+> - Estrutura modular pronta para expansão  
+>
+> Próximo foco: **autenticação segura (login TLS + JWT)** e **mensagens E2EE completas**.
+
+---

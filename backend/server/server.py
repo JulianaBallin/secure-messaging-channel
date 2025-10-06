@@ -3,191 +3,230 @@ server.py
 ----------
 
 AsyncIO-based secure messaging server for CipherTalk.
-- Accepts multiple client connections.
-- Handles user registration and login with password hash.
-- Issues JWT tokens with expiration (default: 30 min).
-- Routes encrypted messages between online users.
-- Stores undelivered messages for offline users.
-- Does NOT decrypt messages (security boundary).
+- Uses TLS (SSL) for encrypted transport layer.
+- Automatically releases occupied ports.
+- Delegates all logic to backend/server/handlers.py.
 """
 
+import sys
+import os
 import asyncio
 import json
-import os
+import ssl
+import socket
+import logging
+import subprocess
 from typing import Dict
 
-from sqlalchemy.orm import Session
+# ----------------------------
+# Garantir import global
+# ----------------------------
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+
 from dotenv import load_dotenv
+from sqlalchemy.orm import Session
 
+from backend.database.connection import engine, Base
 from backend.database.connection import SessionLocal
-from backend.auth.models import User, Message
-from backend.auth.security import hash_password, verify_password
-from backend.auth.auth_jwt import create_access_token, verify_access_token
+from backend.server.handlers import (
+    handle_register,
+    handle_login,
+    handle_list_users,
+    handle_send_message,
+)
 
+# ----------------------------
+# ⚙️ Configurações gerais
+# ----------------------------
 load_dotenv()
+HOST = os.getenv("SERVER_HOST", "127.0.0.1")
+PORT = int(os.getenv("SERVER_PORT", "8888"))
 
-# ✅ Configurações carregadas do .env
-HOST = os.getenv("SERVER_HOST")
-PORT = os.getenv("SERVER_PORT")
+os.makedirs("logs", exist_ok=True)
+logging.basicConfig(
+    filename="logs/server.log",
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
 
-if HOST is None or PORT is None:
-    raise EnvironmentError("❌ SERVER_HOST e SERVER_PORT devem estar definidos no .env")
-
-PORT = int(PORT)
-
-# Dicionário global de conexões de usuários online
 ONLINE_USERS: Dict[str, asyncio.StreamWriter] = {}
 
+# ----------------------------
+# 🔒 SSL/TLS Configuration
+# ----------------------------
+def ensure_certificates():
+    """Generate self-signed TLS certificate if not exist."""
+    if not (os.path.exists("cert.pem") and os.path.exists("key.pem")):
+        print("🔐 Gerando certificado TLS autoassinado...")
+        subprocess.run(
+            [
+                "openssl", "req", "-new", "-x509", "-days", "365",
+                "-nodes", "-out", "cert.pem", "-keyout", "key.pem",
+                "-subj", "/CN=CipherTalk-Server"
+            ],
+            check=True
+        )
+        print("✅ Certificados TLS gerados com sucesso.")
 
+def create_ssl_context() -> ssl.SSLContext:
+    """Create an SSL context for the secure server."""
+    ensure_certificates()
+    context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+    context.load_cert_chain(certfile="cert.pem", keyfile="key.pem")
+    return context
+
+# ----------------------------
+# 🔧 Liberação automática da porta
+# ----------------------------
+def free_port(port: int):
+    """Forcefully free the port if occupied."""
+    try:
+        # Linux/macOS
+        output = subprocess.getoutput(f"lsof -ti:{port}")
+        if output:
+            for pid in output.splitlines():
+                subprocess.run(["kill", "-9", pid], check=False)
+            print(f"⚙️ Porta {port} liberada de processos antigos.")
+    except Exception as e:
+        print(f"⚠️ Não foi possível liberar a porta {port}: {e}")
+
+
+# ----------------------------
+# 🔁 Manipulação de conexões
+# ----------------------------
 async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-    """Handle client connection: register, login, route messages."""
+    """Handles new client connections and delegates to handlers."""
     db: Session = SessionLocal()
     username = None
     addr = writer.get_extra_info("peername")
-    print(f"[INFO] Conexão recebida de {addr}")
+    logging.info(f"[CONNECT] Nova conexão recebida de {addr}")
+    print(f"📡 Nova conexão recebida de {addr}")
 
     try:
-        # 📥 Recebe dados iniciais (registro ou login)
         data = await reader.readline()
-        creds = json.loads(data.decode().strip())
-        action = creds.get("action")
+        if not data:
+            return
 
-        # 🧑‍💻 Registro de novo usuário
+        message = json.loads(data.decode().strip())
+        action = message.get("action")
+
         if action == "register":
-            username = creds.get("username")
-            password = creds.get("password")
+            await handle_register(db, writer, message)
+            writer.close()
+            await writer.wait_closed()
+            return
 
-            if db.query(User).filter(User.username == username).first():
-                writer.write("❌ Usuário já existe.\n".encode("utf-8"))
+        elif action == "login":
+            username, token = await handle_login(db, writer, message, ONLINE_USERS)
+            if not username:
+                writer.close()
+                await writer.wait_closed()
+                return
 
-            else:
-                new_user = User(username=username, password_hash=hash_password(password))
-                db.add(new_user)
-                db.commit()
-                writer.write("✅ Usuário criado com sucesso!\n".encode("utf-8"))
-
-
+        else:
+            writer.write("❌ Ação inicial inválida.\n".encode("utf-8"))
             await writer.drain()
             writer.close()
             await writer.wait_closed()
             return
 
-        # 🔐 Login de usuário existente
-        if action == "login":
-            username = creds.get("username")
-            password = creds.get("password")
-
-            user = db.query(User).filter(User.username == username).first()
-            if not user or not verify_password(password, user.password_hash):
-                writer.write(b"AUTH_FAILED\n")
-                await writer.drain()
-                writer.close()
-                await writer.wait_closed()
-                print(f"[DENIED] Conexão recusada para {username}")
-                return
-
-            # ✅ Gera token JWT
-            token = create_access_token(username)
-            writer.write((json.dumps({"token": token}) + "\n").encode())
-            await writer.drain()
-
-            ONLINE_USERS[username] = writer
-            print(f"[LOGIN] {username} autenticado com sucesso.")
-
-            # 📤 Entregar mensagens offline, se houver
-            offline_messages = (
-                db.query(Message)
-                .join(User, User.id == Message.receiver_id)
-                .filter(User.username == username)
-                .all()
-            )
-            if offline_messages:
-                for msg in offline_messages:
-                    payload = {
-                        "from": db.query(User).get(msg.sender_id).username,
-                        "content_encrypted": msg.content_encrypted,
-                        "timestamp": str(msg.timestamp),
-                    }
-                    writer.write((json.dumps(payload) + "\n").encode())
-                    await writer.drain()
-
-                print(f"[INFO] {len(offline_messages)} mensagens offline entregues a {username}.")
-                for m in offline_messages:
-                    db.delete(m)
-                db.commit()
-
-        # 📡 Loop principal para roteamento de mensagens
+        # ----------------------------------------------------
+        # Loop principal: processa ações pós-login
+        # ----------------------------------------------------
         while True:
             data = await reader.readline()
             if not data:
                 break
 
             try:
-                message = json.loads(data.decode().strip())
-                token = message.get("token")
+                payload = json.loads(data.decode().strip())
+                action = payload.get("action")
 
-                # ✅ Verifica token JWT
-                sender = verify_access_token(token)
-                receiver = message["to"]
-                encrypted_content = message["content_encrypted"]
-
-                print(f"[MSG] {sender} → {receiver}")
-
-                receiver_user = db.query(User).filter(User.username == receiver).first()
-                sender_user = db.query(User).filter(User.username == sender).first()
-
-                if not receiver_user:
-                    print(f"[ERROR] Usuário destino '{receiver}' não encontrado.")
-                    continue
-
-                if receiver in ONLINE_USERS:
-                    # ✅ Usuário online → entrega imediata
-                    dest_writer = ONLINE_USERS[receiver]
-                    payload = {
-                        "from": sender,
-                        "content_encrypted": encrypted_content,
-                        "timestamp": str(message.get("timestamp", "")),
-                    }
-                    dest_writer.write((json.dumps(payload) + "\n").encode())
-                    await dest_writer.drain()
-                    print(f"[DELIVERED] Mensagem entregue a {receiver}")
+                if action == "list_users":
+                    await handle_list_users(db, writer, payload, ONLINE_USERS)
+                elif action == "send_message":
+                    await handle_send_message(db, payload, ONLINE_USERS)
                 else:
-                    # 📥 Usuário offline → salva no banco
-                    msg_obj = Message(
-                        sender_id=sender_user.id,
-                        receiver_id=receiver_user.id,
-                        content_encrypted=encrypted_content,
-                    )
-                    db.add(msg_obj)
-                    db.commit()
-                    print(f"[STORED] {receiver} offline. Mensagem salva.")
+                    logging.warning(f"[WARN] Ação desconhecida recebida: {action}")
+                    writer.write(f"❌ Ação desconhecida: {action}\n".encode("utf-8"))
+                    await writer.drain()
 
-            except ValueError as e:
-                print(f"[AUTH ERROR] {e}")
-                writer.write(b"INVALID_TOKEN\n")
+            except json.JSONDecodeError:
+                logging.warning("[WARN] JSON inválido recebido.")
+                writer.write("❌ Erro: mensagem inválida (JSON incorreto).\n".encode("utf-8"))
                 await writer.drain()
             except Exception as e:
-                print(f"[ERROR] Erro ao processar mensagem: {e}")
+                logging.error(f"[ERROR] Falha ao processar ação: {e}")
+                print(f"⚠️ Erro ao processar ação: {e}")
 
     except Exception as e:
-        print(f"[ERROR] Conexão encerrada inesperadamente: {e}")
+        logging.error(f"[ERROR] Conexão encerrada com erro: {e}")
+        print(f"💥 Erro de conexão: {e}")
 
     finally:
         if username and username in ONLINE_USERS:
             del ONLINE_USERS[username]
-            print(f"[LOGOUT] {username} saiu.")
+            logging.info(f"[LOGOUT] {username} desconectado.")
         writer.close()
         await writer.wait_closed()
 
 
+# ----------------------------
+# 🗄️ Inicialização automática do banco
+# ----------------------------
+
+# 🎨 Cores ANSI para saída no terminal
+class Color:
+    GREEN = "\033[92m"
+    BLUE = "\033[94m"
+    YELLOW = "\033[93m"
+    RED = "\033[91m"
+    RESET = "\033[0m"
+
+
+def ensure_database():
+    """Garante que todas as tabelas essenciais existem no banco."""
+    try:
+        # 🔹 Importa explicitamente os modelos (garante que as tabelas sejam conhecidas)
+        from backend.auth.models import User, Group, GroupMember, Message  # noqa: F401
+
+        Base.metadata.create_all(bind=engine)
+        print(f"{Color.GREEN}🗄️ Banco de dados verificado e atualizado com sucesso.{Color.RESET}")
+
+    except Exception as e:
+        print(f"{Color.RED}💥 Erro ao verificar/criar banco: {e}{Color.RESET}")
+
+
+# ----------------------------
+# 🚀 Inicialização do servidor
+# ----------------------------
 async def main():
     """Start the secure messaging server."""
-    server = await asyncio.start_server(handle_client, HOST, PORT)
-    addr = server.sockets[0].getsockname()
-    print(f"[SERVER] Servidor rodando em {addr}")
+    ensure_database()
+    ssl_context = create_ssl_context()
+    free_port(PORT)
 
-    async with server:
-        await server.serve_forever()
+    retry_count = 0
+    while True:
+        try:
+            server = await asyncio.start_server(
+                handle_client, HOST, PORT, ssl=ssl_context
+            )
+            addr = server.sockets[0].getsockname()
+            print(f"[SERVER] Servidor seguro rodando em {addr} (TLS habilitado)")
+            logging.info(f"[START] Servidor ativo em {addr} com TLS")
+            async with server:
+                await server.serve_forever()
+            break
+        except OSError as e:
+            retry_count += 1
+            print(f"⚠️ Porta {PORT} ocupada ou erro ao iniciar ({retry_count}). Tentando novamente em 2s...")
+            logging.warning(f"[WARN] Falha ao iniciar servidor ({e}), tentativa {retry_count}")
+            await asyncio.sleep(2)
+        except Exception as e:
+            print(f"💥 Erro inesperado ao iniciar servidor: {e}")
+            logging.error(f"[FATAL] {e}")
+            await asyncio.sleep(2)
 
 
 if __name__ == "__main__":
@@ -195,3 +234,4 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\n[SERVER] Encerrado pelo usuário.")
+        logging.info("[STOP] Servidor encerrado manualmente.")

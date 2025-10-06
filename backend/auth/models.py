@@ -30,8 +30,7 @@ class User(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    public_key: Mapped[bytes] = mapped_column(LargeBinary, nullable=True)   # ✅ NOVO
-    private_key: Mapped[bytes] = mapped_column(LargeBinary, nullable=True)  # ✅ NOVO
+    public_key: Mapped[bytes] = mapped_column(LargeBinary, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
