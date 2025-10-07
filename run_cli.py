@@ -1,11 +1,12 @@
 """
-run_cli.py
------------
+run_cli.py (final)
+------------------
 
-CipherTalk CLI - Parte 2
-- Cadastro de usuário com geração de par RSA.
+CipherTalk CLI Unificado
+- Cadastro de usuário com RSA.
 - Login com JWT.
-- Listagem de usuários com status online/offline e presença de chave pública.
+- Envio e leitura de mensagens E2EE.
+- Listagem de usuários com status online/offline.
 """
 
 import asyncio
@@ -17,14 +18,67 @@ from getpass import getpass
 from base64 import b64encode
 from dotenv import load_dotenv
 
+# 🔁 Importar módulos internos
+sys.path.append(os.path.dirname(__file__))
+
 from backend.crypto.rsa_manager import generate_rsa_keypair
+from backend.messages.cli import send_encrypted_message, read_and_decrypt_messages
+from backend.messages.listener import start_listener
+
+# ⚙️ Login centralizado (substitui client/auth/login_cli.py)
+async def perform_login():
+    """Executa login seguro com o servidor (TLS) e retorna (username, token)."""
+    import ssl
+
+    try:
+        username = input("👤 Nome de usuário: ").strip()
+        password = getpass("🔑 Senha: ")
+
+        # 🔒 Configurar contexto TLS
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+
+        # 🌐 Conectar ao servidor seguro
+        reader, writer = await asyncio.open_connection(HOST, PORT, ssl=ssl_context)
+
+        # 📤 Enviar payload de login
+        payload = {"action": "login", "username": username, "password": password}
+        writer.write((json.dumps(payload) + "\n").encode("utf-8"))
+        await writer.drain()
+
+        # 📥 Receber resposta
+        response = await reader.readline()
+        writer.close()
+        await writer.wait_closed()
+
+        if not response:
+            print("❌ Falha ao conectar ao servidor.")
+            return None, None
+
+        # 🧩 Processar resposta
+        data = json.loads(response.decode().strip())
+        if "token" not in data:
+            print("❌ Usuário ou senha inválidos.")
+            return None, None
+
+        print(f"✅ Login bem-sucedido! Bem-vindo(a), {username}.")
+        return username, data["token"]
+
+    except ConnectionRefusedError:
+        print("❌ Servidor indisponível. Verifique se está em execução.")
+        return None, None
+    except Exception as e:
+        print(f"⚠️ Erro inesperado no login: {e}")
+        return None, None
+
 
 # 🌱 Carregar variáveis de ambiente
 load_dotenv()
 HOST = os.getenv("SERVER_HOST", "127.0.0.1")
 PORT = int(os.getenv("SERVER_PORT", "8888"))
 
-# 📁 Criar diretórios obrigatórios
+# 📁 Diretórios necessários
 os.makedirs("keys", exist_ok=True)
 os.makedirs("logs", exist_ok=True)
 
@@ -41,8 +95,11 @@ def validar_senha(password: str) -> bool:
     )
 
 
+# ======================================================
+# 📝 Cadastro de usuário
+# ======================================================
 async def cadastrar_usuario():
-    """Fluxo de cadastro com geração de par RSA."""
+    """Cadastra um novo usuário com par RSA."""
     print("\n=== 📝 Cadastro de Novo Usuário ===")
     username = input("👤 Nome de usuário: ").strip()
 
@@ -61,25 +118,23 @@ async def cadastrar_usuario():
         print("❌ A senha deve ter pelo menos 8 caracteres, 1 maiúscula, 1 número e 1 caractere especial.")
         return
 
-    # 🔐 Geração do par RSA
+    # 🔐 Gera par RSA
     public_key, private_key = generate_rsa_keypair()
 
-    # 💾 Salvar chave privada localmente
+    # 💾 Salva chave privada localmente
     private_path = f"keys/{username}_private.pem"
     with open(private_path, "wb") as f:
         f.write(private_key)
     print(f"🔑 Chave privada salva em: {private_path}")
 
-    # 📤 Converter chave pública em Base64 para enviar ao servidor
+    # 📤 Envia registro ao servidor
     public_key_b64 = b64encode(public_key).decode()
-
-    # 📡 Enviar cadastro ao servidor
     reader, writer = await asyncio.open_connection(HOST, PORT)
     payload = {
         "action": "register",
         "username": username,
         "password": password,
-        "public_key": public_key_b64
+        "public_key": public_key_b64,
     }
     writer.write((json.dumps(payload) + "\n").encode("utf-8"))
     await writer.drain()
@@ -91,14 +146,13 @@ async def cadastrar_usuario():
     await writer.wait_closed()
 
 
+# ======================================================
+# 📋 Listar usuários
+# ======================================================
 async def listar_usuarios(token: str):
-    """Solicita ao servidor a lista de usuários e exibe status."""
+    """Lista usuários online/offline."""
     reader, writer = await asyncio.open_connection(HOST, PORT)
-
-    payload = {
-        "action": "list_users",
-        "token": token
-    }
+    payload = {"action": "list_users", "token": token}
     writer.write((json.dumps(payload) + "\n").encode("utf-8"))
     await writer.drain()
 
@@ -118,41 +172,49 @@ async def listar_usuarios(token: str):
     await writer.wait_closed()
 
 
+# ======================================================
+# 🔐 Login e menu interno
+# ======================================================
 async def fazer_login():
-    """Fluxo de login com token JWT e listagem de usuários."""
+    """Login + menu interno pós-autenticação."""
     print("\n=== 🔐 Login ===")
-    username = input("👤 Nome de usuário: ").strip()
-    password = getpass("🔑 Senha: ")
-
-    reader, writer = await asyncio.open_connection(HOST, PORT)
-    payload = {
-        "action": "login",
-        "username": username,
-        "password": password
-    }
-    writer.write((json.dumps(payload) + "\n").encode("utf-8"))
-    await writer.drain()
-
-    response = await reader.readline()
-    if not response:
-        print("❌ Falha de conexão com o servidor.")
+    username, token = await perform_login()
+    if not token:
+        input("\nPressione ENTER para voltar ao menu inicial...")
         return
 
-    data = json.loads(response.decode().strip())
-    if "token" not in data:
-        print("❌ Usuário ou senha inválidos.")
-        return
+    # 🧭 Inicia o listener assíncrono para receber mensagens em tempo real
+    asyncio.create_task(start_listener(username, token, HOST, PORT))
 
-    token = data["token"]
-    print(f"✅ Login bem-sucedido! Bem-vindo(a), {username}\n")
+    while True:
+        os.system("clear" if os.name != "nt" else "cls")
+        print(f"=== 💬 CipherTalk - Usuário: {username} ===")
+        print("1️⃣  - Listar usuários")
+        print("2️⃣  - Enviar mensagem segura (E2EE)")
+        print("3️⃣  - Ler mensagens recebidas")
+        print("0️⃣  - Logout")
 
-    # 📋 Mostrar lista de usuários
-    await listar_usuarios(token)
+        opcao = input("Escolha uma opção: ").strip()
+        if opcao == "1":
+            await listar_usuarios(token)
+            input("\nPressione ENTER para continuar...")
+        elif opcao == "2":
+            await send_encrypted_message(username, token, HOST, PORT)
+            input("\nPressione ENTER para continuar...")
+        elif opcao == "3":
+            read_and_decrypt_messages(username)
+            input("\nPressione ENTER para continuar...")
+        elif opcao == "0":
+            print("👋 Logout efetuado.")
+            break
+        else:
+            print("❌ Opção inválida.")
+            input("\nPressione ENTER para continuar...")
 
-    print("\n📬 Em breve: chat individual e grupos...")
-    input("\nPressione ENTER para voltar ao menu inicial.")
 
-
+# ======================================================
+# 🧭 Menu principal
+# ======================================================
 async def menu_principal():
     """Menu inicial do cliente."""
     while True:
@@ -176,6 +238,9 @@ async def menu_principal():
             input("\nPressione ENTER para continuar...")
 
 
+# ======================================================
+# ▶️ Execução direta
+# ======================================================
 if __name__ == "__main__":
     try:
         asyncio.run(menu_principal())

@@ -3,14 +3,15 @@ fastapi==0.115.0           # Framework backend rápido e assíncrono
 uvicorn==0.30.6            # Servidor ASGI para rodar a aplicação FastAPI
 
 # --- Criptografia ---
-cryptography==43.0.0       # Geração de chaves RSA e funções criptográficas
-pycryptodome==3.20.0       # Implementação do algoritmo IDEA e outras cifras
+cryptography==43.0.0        # Backend de baixo nível para TLS e certificados
+pycryptodomex==3.20.0       # Biblioteca completa (inclui IDEA, RSA, OAEP, CBC, etc.)
 
 # --- Autenticação e Segurança ---
 passlib==1.7.4             # Hash seguro de senhas (SHA-256 + salt)
 python-jose==3.3.0         # JWT tokens (opcional para autenticação baseada em token)
 bcrypt==4.0.1
 pyjwt>=2.8.0              # Algoritmo bcrypt (opcional para senhas mais seguras)
+aiohttp==3.10.5  # Cliente HTTP assíncrono
 
 # --- Banco de Dados ---
 sqlalchemy==2.0.34         # ORM para manipulação de dados

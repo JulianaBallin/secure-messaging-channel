@@ -3,9 +3,9 @@ server.py
 ----------
 
 AsyncIO-based secure messaging server for CipherTalk.
-- Uses TLS (SSL) for encrypted transport layer.
-- Automatically releases occupied ports.
-- Delegates all logic to backend/server/handlers.py.
+- Supports multi-user TLS connections.
+- Handles register, login, resume_session, list_users, and send_message.
+- Maintains end-to-end encrypted routing (IDEA + RSA).
 """
 
 import sys
@@ -25,15 +25,15 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from dotenv import load_dotenv
 from sqlalchemy.orm import Session
-
-from backend.database.connection import engine, Base
-from backend.database.connection import SessionLocal
+from backend.database.connection import SessionLocal, engine
+from backend.auth.models import Base
 from backend.server.handlers import (
     handle_register,
     handle_login,
     handle_list_users,
     handle_send_message,
 )
+from backend.auth.auth_jwt import verify_access_token
 
 # ----------------------------
 # ⚙️ Configurações gerais
@@ -81,7 +81,6 @@ def create_ssl_context() -> ssl.SSLContext:
 def free_port(port: int):
     """Forcefully free the port if occupied."""
     try:
-        # Linux/macOS
         output = subprocess.getoutput(f"lsof -ti:{port}")
         if output:
             for pid in output.splitlines():
@@ -89,6 +88,15 @@ def free_port(port: int):
             print(f"⚙️ Porta {port} liberada de processos antigos.")
     except Exception as e:
         print(f"⚠️ Não foi possível liberar a porta {port}: {e}")
+
+
+# ----------------------------
+# 🗄️ Inicialização automática do banco
+# ----------------------------
+def ensure_database():
+    """Garante que todas as tabelas essenciais existem no banco."""
+    Base.metadata.create_all(bind=engine)
+    print("🗄️ Banco de dados verificado e atualizado com sucesso.")
 
 
 # ----------------------------
@@ -110,12 +118,36 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
         message = json.loads(data.decode().strip())
         action = message.get("action")
 
-        if action == "register":
+        # ----------------------------
+        # NOVO: Sessão persistente com token JWT
+        # ----------------------------
+        if action == "resume_session":
+            token = message.get("token")
+            username = verify_access_token(token)
+            if not username:
+                writer.write("AUTH_FAILED\n".encode("utf-8"))
+                await writer.drain()
+                writer.close()
+                await writer.wait_closed()
+                logging.warning("[RESUME_FAIL] Token inválido em tentativa de sessão persistente.")
+                return
+
+            ONLINE_USERS[username] = writer
+            logging.info(f"[RESUME] Sessão restaurada para {username}")
+            writer.write(json.dumps({"status": "ok", "message": "Sessão restaurada com sucesso."}).encode("utf-8") + b"\n")
+            await writer.drain()
+        # ----------------------------
+        # REGISTRO DE NOVO USUÁRIO
+        # ----------------------------
+        elif action == "register":
             await handle_register(db, writer, message)
             writer.close()
             await writer.wait_closed()
             return
 
+        # ----------------------------
+        # LOGIN TRADICIONAL (com senha)
+        # ----------------------------
         elif action == "login":
             username, token = await handle_login(db, writer, message, ONLINE_USERS)
             if not username:
@@ -131,7 +163,7 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
             return
 
         # ----------------------------------------------------
-        # Loop principal: processa ações pós-login
+        # LOOP PRINCIPAL: ações pós-login / sessão
         # ----------------------------------------------------
         while True:
             data = await reader.readline()
@@ -147,7 +179,7 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                 elif action == "send_message":
                     await handle_send_message(db, payload, ONLINE_USERS)
                 else:
-                    logging.warning(f"[WARN] Ação desconhecida recebida: {action}")
+                    logging.warning(f"[WARN] Ação desconhecida: {action}")
                     writer.write(f"❌ Ação desconhecida: {action}\n".encode("utf-8"))
                     await writer.drain()
 
@@ -169,32 +201,6 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
             logging.info(f"[LOGOUT] {username} desconectado.")
         writer.close()
         await writer.wait_closed()
-
-
-# ----------------------------
-# 🗄️ Inicialização automática do banco
-# ----------------------------
-
-# 🎨 Cores ANSI para saída no terminal
-class Color:
-    GREEN = "\033[92m"
-    BLUE = "\033[94m"
-    YELLOW = "\033[93m"
-    RED = "\033[91m"
-    RESET = "\033[0m"
-
-
-def ensure_database():
-    """Garante que todas as tabelas essenciais existem no banco."""
-    try:
-        # 🔹 Importa explicitamente os modelos (garante que as tabelas sejam conhecidas)
-        from backend.auth.models import User, Group, GroupMember, Message  # noqa: F401
-
-        Base.metadata.create_all(bind=engine)
-        print(f"{Color.GREEN}🗄️ Banco de dados verificado e atualizado com sucesso.{Color.RESET}")
-
-    except Exception as e:
-        print(f"{Color.RED}💥 Erro ao verificar/criar banco: {e}{Color.RESET}")
 
 
 # ----------------------------

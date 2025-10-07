@@ -28,108 +28,86 @@
 ## 📁 Estrutura Inicial do Projeto
 ```
 secure-messaging-channel/
-├─ backend/
-│  ├─ __init__.py
-│  ├─ main.py                     # ponto de entrada CLI principal (não FastAPI por enquanto)
-│  │
-│  ├─ auth/                       
-│  │  ├─ __init__.py
-│  │  ├─ models.py                # modelos ORM (User, Message, Group, GroupMember)
-│  │  ├─ routes.py                # rotas auxiliares (se necessário futuramente)
-│  │  ├─ security.py              # hash seguro de senhas e verificação
-│  │  └─ auth_jwt.py              # geração e validação de tokens JWT
-│  │
-│  ├─ crypto/                     
-│  │  ├─ __init__.py
-│  │  ├─ rsa_manager.py           # geração e uso de chaves RSA
-│  │  └─ idea_manager.py          # criptografia IDEA para mensagens
-│  │
-│  ├─ database/                  
-│  │  ├─ __init__.py
-│  │  ├─ connection.py            # engine e sessão do banco (SQLite)
-│  │  └─ queries/                 # 📂 consultas diretas ao banco (isoladas)
-│  │     ├─ __init__.py
-│  │     ├─ users.py              # consultas de usuários
-│  │     ├─ messages.py           # consultas de mensagens
-│  │     └─ groups.py             # consultas de grupos
-│  │
-│  ├─ server/                     # 🌐 servidor asyncio (TCP)
-│  │  ├─ __init__.py
-│  │  ├─ server.py                # servidor que gerencia conexões e mensagens
-│  │  └─ client.py                # cliente simples para testes individuais (auxiliar)
-│  │
-│  ├─ messages/                   # lógica de mensagens (futuramente ampliada)
-│  │  └─ cli.py
-│  │
-│  ├─ groups/                     # lógica de grupos (admin, membros, etc)
-│  │  └─ cli.py
-│  │
-│  └─ routes/                     
-│     ├─ __init__.py
-│     └─ messaging.py             # rotas internas do sistema (se migrarmos p/ FastAPI depois)
-│
-├─ keys/                          # 📂 chaves privadas dos usuários (armazenadas localmente)
-│
-├─ logs/                          # 📂 logs detalhados de segurança e consultas
-│  └─ security.log
-│
-├─ tests/                         
-│  ├─ __init__.py
-│  ├─ test_auth.py
-│  ├─ test_crypto.py
-│  └─ test_messaging.py
-│
-├─ run_cli.py                     # 🚀 CLI principal com cadastro, login e consultas
-├─ run_queries.py                 # utilitário para consultas rápidas ao banco
-├─ init_db.py                     # inicializa o banco de dados
-├─ checklist.MD                   # lista de funcionalidades implementadas/faltantes
-├─ .gitignore
-├─ Makefile
-├─ LICENSE
-├─ README.md
-├─ requirements.txt
-└─ .env.example                  
+├── backend
+│   ├── auth
+│   │   ├── admin_cli.py
+│   │   ├── auth_jwt.py
+│   │   ├── __init__.py
+│   │   ├── models.py
+│   │   ├── routes.py
+│   │   └── security.py
+│   ├── config.py
+│   ├── crypto
+│   │   ├── idea_manager.py
+│   │   ├── __init__.py
+│   │   └── rsa_manager.py
+│   ├── database
+│   │   ├── cipher_talk.db
+│   │   ├── connection.py
+│   │   ├── __init__.py
+│   │   └── queries
+│   │       ├── groups.py
+│   │       ├── __init__.py
+│   │       ├── messages.py
+│   │       └── users.py
+│   ├── groups
+│   │   └── admin_cli.py
+│   ├── __init__.py
+│   ├── main.py
+│   ├── messages
+│   │   ├── admin_cli.py
+│   │   └── __init__.py
+│   ├── routes
+│   │   ├── __init__.py
+│   │   └── messaging.py
+│   └── server
+│       ├── handlers.py
+│       ├── __init__.py
+│       └── server.py
+├── cert.pem
+├── checklist.MD
+├── cipher_talk.db
+├── client
+│   ├── auth
+│   │   ├── __init__.py
+│   │   ├── login_cli.py
+│   │   ├── session_manager.py
+│   │   └── signup_cli.py
+│   ├── __init__.py
+│   ├── menus
+│   │   ├── __init__.py
+│   │   ├── menu_inicial.py
+│   │   └── menu_pos_login.py
+│   ├── messages
+│   │   ├── __init__.py
+│   │   └── message_cli.py
+│   ├── network
+│   │   ├── client_socket.py
+│   │   └── __init__.py
+│   ├── run_cli.py
+│   └── utils
+│       ├── helpers.py
+│       ├── __init__.py
+│       ├── logger.py
+│       └── validator.py
+├── init_db.py
+├── key.pem
+├── keys
+│   ├── JulianaBallin_private.pem
+│   └── JulianaTest2_private.pem
+├── LICENSE
+├── logs
+│   └── server.log
+├── Makefile
+├── README.md
+├── requirements.txt
+├── run_cli.py
+└── run_queries.py
      
 ```
 
 ---
 
-## ✅ Checklist de Desenvolvimento
-
-### 🏗️ Configuração Inicial
-- [ ] Criar estrutura de diretórios do projeto  
-- [ ] Configurar ambiente virtual e instalar dependências  
-- [ ] Criar servidor inicial com Flask ou FastAPI  
-
-### 🔑 Autenticação Segura
-- [ ] Implementar registro de usuários com hash de senha (SHA-256 + salt)  
-- [ ] Criar sistema de login com geração de sessão/token  
-- [ ] Conectar banco de dados para armazenamento seguro  
-
-### 🔐 Criptografia
-- [ ] Implementar geração de chaves RSA por usuário  
-- [ ] Realizar troca segura de chaves RSA entre clientes  
-- [ ] Implementar criptografia e descriptografia IDEA para mensagens  
-
-### 📨 Núcleo de Mensagens
-- [ ] Criar endpoints para envio e recebimento de mensagens  
-- [ ] Armazenar histórico de mensagens criptografadas  
-- [ ] Exibir lista de usuários online (ativos no sistema)  
-
-### 🧪 Testes e Segurança
-- [ ] Criar testes unitários para autenticação e criptografia  
-- [ ] Validar fluxo completo de troca de mensagens cifradas  
-- [ ] Testar contra vulnerabilidades comuns (replay, MITM, etc.)  
-
----
-
-## 🧭 Melhorias Futuras
-
-- 📱 Interface web simples com Streamlit ou React  
-- 🧠 Autenticação multifator (MFA)  
-- 📊 Logs e monitoramento de segurança  
-
----
 
 ## 👩‍💻 Equipe de Desenvolvimento
 

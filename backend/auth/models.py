@@ -94,6 +94,7 @@ class Message(Base):
     group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), nullable=True, index=True)
 
     content_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
+    key_encrypted = Column(Text, nullable=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True, nullable=False)
 
     sender: Mapped["User"] = relationship("User", back_populates="sent_messages", foreign_keys=[sender_id])

@@ -64,10 +64,11 @@ debug.log
 *.csr
 *.pfx
 keys/
+keys/*
+!keys/.gitkeep
 logs/
 *.pem
 *.log
-
 
 # ================================
 # 🐳 Docker
