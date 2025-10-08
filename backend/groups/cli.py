@@ -2,8 +2,8 @@
 cli.py (grupos)
 ---------------
 
-Provides a terminal interface for creating groups, joining groups,
-and listing groups and their members.
+Fornece uma interface de terminal para criar grupos, entrar em grupos
+e listar grupos e seus membros.
 """
 
 from sqlalchemy.orm import Session

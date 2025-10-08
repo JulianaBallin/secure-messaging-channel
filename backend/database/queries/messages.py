@@ -2,7 +2,7 @@
 messages.py
 -----------
 
-Query functions for retrieving messages from the database.
+Funções de consulta para recuperar mensagens do banco de dados.
 """
 
 from sqlalchemy.orm import Session

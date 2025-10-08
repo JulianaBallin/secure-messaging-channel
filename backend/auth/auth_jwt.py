@@ -2,7 +2,7 @@
 auth_jwt.py
 ------------
 
-Handles JWT token generation and validation for secure authentication.
+Gerencia a geração e validação de tokens JWT para autenticação segura.
 """
 
 import os

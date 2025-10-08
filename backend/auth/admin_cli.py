@@ -35,7 +35,7 @@ def is_valid_password(password: str) -> bool:
 def register_user() -> None:
     """Cadastro local (uso administrativo apenas)."""
     db: Session = SessionLocal()
-    public_key, _ = generate_rsa_keypair()  # 🔒 não armazena private_key
+    public_key, _ = generate_rsa_keypair()  # não armazena private_key
 
     username = input("👤 Nome de usuário: ").strip()
     if not is_valid_username(username):

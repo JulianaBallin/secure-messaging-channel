@@ -2,8 +2,8 @@
 rsa_manager.py (revisado)
 -------------------------
 
-Handles RSA key generation, encryption, and decryption for secure key exchange.
-Uses OAEP padding and allows configurable key size (2048–4096 bits).
+Gerencia a geração de chaves RSA, criptografia e descriptografia para troca segura de chaves.
+Utiliza preenchimento OAEP e permite tamanho de chave configurável (2048–4096 bits).
 """
 
 from Cryptodome.PublicKey import RSA

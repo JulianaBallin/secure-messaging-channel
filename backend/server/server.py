@@ -2,10 +2,10 @@
 server.py
 ----------
 
-AsyncIO-based secure messaging server for CipherTalk.
-- Supports multi-user TLS connections.
-- Handles register, login, resume_session, list_users, and send_message.
-- Maintains end-to-end encrypted routing (IDEA + RSA).
+Servidor de mensagens seguro baseado em AsyncIO para CipherTalk.
+- Suporta múltiplas conexões TLS de usuários
+- Gerencia register, login, resume_session, list_users e send_message
+- Mantém roteamento com criptografia ponta-a-ponta (IDEA + RSA)
 """
 
 import sys
@@ -13,8 +13,6 @@ import os
 import asyncio
 import json
 import ssl
-import socket
-import logging
 import subprocess
 from typing import Dict
 
@@ -34,25 +32,20 @@ from backend.server.handlers import (
     handle_send_message,
 )
 from backend.auth.auth_jwt import verify_access_token
+from backend.utils.logger_config import server_logger as log
 
 # ----------------------------
-# ⚙️ Configurações gerais
+# Configurações gerais
 # ----------------------------
 load_dotenv()
 HOST = os.getenv("SERVER_HOST", "127.0.0.1")
 PORT = int(os.getenv("SERVER_PORT", "8888"))
 
-os.makedirs("logs", exist_ok=True)
-logging.basicConfig(
-    filename="logs/server.log",
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-)
-
 ONLINE_USERS: Dict[str, asyncio.StreamWriter] = {}
 
+
 # ----------------------------
-# 🔒 SSL/TLS Configuration
+# SSL/TLS Configuration
 # ----------------------------
 def ensure_certificates():
     """Generate self-signed TLS certificate if not exist."""
@@ -67,6 +60,8 @@ def ensure_certificates():
             check=True
         )
         print("✅ Certificados TLS gerados com sucesso.")
+        log.info("🔐 Certificados TLS autoassinados gerados.")
+
 
 def create_ssl_context() -> ssl.SSLContext:
     """Create an SSL context for the secure server."""
@@ -75,8 +70,9 @@ def create_ssl_context() -> ssl.SSLContext:
     context.load_cert_chain(certfile="cert.pem", keyfile="key.pem")
     return context
 
+
 # ----------------------------
-# 🔧 Liberação automática da porta
+# Liberação automática da porta
 # ----------------------------
 def free_port(port: int):
     """Forcefully free the port if occupied."""
@@ -85,29 +81,30 @@ def free_port(port: int):
         if output:
             for pid in output.splitlines():
                 subprocess.run(["kill", "-9", pid], check=False)
-            print(f"⚙️ Porta {port} liberada de processos antigos.")
+            log.warning(f"⚙️ Porta {port} liberada de processos antigos.")
     except Exception as e:
-        print(f"⚠️ Não foi possível liberar a porta {port}: {e}")
+        log.error(f"⚠️ Não foi possível liberar a porta {port}: {e}")
 
 
 # ----------------------------
-# 🗄️ Inicialização automática do banco
+# Inicialização automática do banco
 # ----------------------------
 def ensure_database():
     """Garante que todas as tabelas essenciais existem no banco."""
     Base.metadata.create_all(bind=engine)
     print("🗄️ Banco de dados verificado e atualizado com sucesso.")
+    log.info("🗄️ Banco de dados verificado e atualizado com sucesso.")
 
 
 # ----------------------------
-# 🔁 Manipulação de conexões
+# Manipulação de conexões
 # ----------------------------
 async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     """Handles new client connections and delegates to handlers."""
     db: Session = SessionLocal()
     username = None
     addr = writer.get_extra_info("peername")
-    logging.info(f"[CONNECT] Nova conexão recebida de {addr}")
+    log.info(f"[CONNECT] Nova conexão recebida de {addr}")
     print(f"📡 Nova conexão recebida de {addr}")
 
     try:
@@ -129,25 +126,20 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                 await writer.drain()
                 writer.close()
                 await writer.wait_closed()
-                logging.warning("[RESUME_FAIL] Token inválido em tentativa de sessão persistente.")
+                log.warning("[RESUME_FAIL] Token inválido em tentativa de sessão persistente.")
                 return
 
             ONLINE_USERS[username] = writer
-            logging.info(f"[RESUME] Sessão restaurada para {username}")
+            log.info(f"[RESUME] Sessão restaurada para {username}")
             writer.write(json.dumps({"status": "ok", "message": "Sessão restaurada com sucesso."}).encode("utf-8") + b"\n")
             await writer.drain()
-        # ----------------------------
-        # REGISTRO DE NOVO USUÁRIO
-        # ----------------------------
+
         elif action == "register":
             await handle_register(db, writer, message)
             writer.close()
             await writer.wait_closed()
             return
 
-        # ----------------------------
-        # LOGIN TRADICIONAL (com senha)
-        # ----------------------------
         elif action == "login":
             username, token = await handle_login(db, writer, message, ONLINE_USERS)
             if not username:
@@ -160,6 +152,7 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
             await writer.drain()
             writer.close()
             await writer.wait_closed()
+            log.warning(f"[INVALID_ACTION] Ação inicial desconhecida: {action}")
             return
 
         # ----------------------------------------------------
@@ -179,32 +172,32 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                 elif action == "send_message":
                     await handle_send_message(db, payload, ONLINE_USERS)
                 else:
-                    logging.warning(f"[WARN] Ação desconhecida: {action}")
+                    log.warning(f"[WARN] Ação desconhecida: {action}")
                     writer.write(f"❌ Ação desconhecida: {action}\n".encode("utf-8"))
                     await writer.drain()
 
             except json.JSONDecodeError:
-                logging.warning("[WARN] JSON inválido recebido.")
+                log.warning("[WARN] JSON inválido recebido.")
                 writer.write("❌ Erro: mensagem inválida (JSON incorreto).\n".encode("utf-8"))
                 await writer.drain()
             except Exception as e:
-                logging.error(f"[ERROR] Falha ao processar ação: {e}")
+                log.error(f"[ERROR] Falha ao processar ação: {e}")
                 print(f"⚠️ Erro ao processar ação: {e}")
 
     except Exception as e:
-        logging.error(f"[ERROR] Conexão encerrada com erro: {e}")
+        log.error(f"[ERROR] Conexão encerrada com erro: {e}")
         print(f"💥 Erro de conexão: {e}")
 
     finally:
         if username and username in ONLINE_USERS:
             del ONLINE_USERS[username]
-            logging.info(f"[LOGOUT] {username} desconectado.")
+            log.info(f"[LOGOUT] {username} desconectado.")
         writer.close()
         await writer.wait_closed()
 
 
 # ----------------------------
-# 🚀 Inicialização do servidor
+# Inicialização do servidor
 # ----------------------------
 async def main():
     """Start the secure messaging server."""
@@ -220,18 +213,18 @@ async def main():
             )
             addr = server.sockets[0].getsockname()
             print(f"[SERVER] Servidor seguro rodando em {addr} (TLS habilitado)")
-            logging.info(f"[START] Servidor ativo em {addr} com TLS")
+            log.info(f"[START] Servidor ativo em {addr} com TLS")
             async with server:
                 await server.serve_forever()
             break
         except OSError as e:
             retry_count += 1
             print(f"⚠️ Porta {PORT} ocupada ou erro ao iniciar ({retry_count}). Tentando novamente em 2s...")
-            logging.warning(f"[WARN] Falha ao iniciar servidor ({e}), tentativa {retry_count}")
+            log.warning(f"[WARN] Falha ao iniciar servidor ({e}), tentativa {retry_count}")
             await asyncio.sleep(2)
         except Exception as e:
             print(f"💥 Erro inesperado ao iniciar servidor: {e}")
-            logging.error(f"[FATAL] {e}")
+            log.error(f"[FATAL] {e}")
             await asyncio.sleep(2)
 
 
@@ -240,4 +233,4 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         print("\n[SERVER] Encerrado pelo usuário.")
-        logging.info("[STOP] Servidor encerrado manualmente.")
+        log.info("[STOP] Servidor encerrado manualmente.")

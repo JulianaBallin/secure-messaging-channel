@@ -2,10 +2,10 @@
 listener.py
 -----------
 
-Persistent async listener for real-time message reception in CipherTalk.
-- Keeps a TLS-secured channel open with the server.
-- Uses `resume_session` for JWT re-authentication.
-- Saves all incoming messages locally as JSON.
+Ouvinte assíncrono persistente para recepção de mensagens em tempo real no CipherTalk.
+- Mantém um canal seguro TLS aberto com o servidor
+- Usa `resume_session` para reautenticação JWT
+- Salva localmente todas as mensagens recebidas como JSON
 """
 
 import asyncio
@@ -28,7 +28,7 @@ async def start_listener(username: str, token: str, host: str, port: int):
     try:
         reader, writer = await asyncio.open_connection(host, port, ssl=ssl_context)
 
-        # 🔑 Sessão persistente via JWT
+        # Sessão persistente via JWT
         init_payload = {"action": "resume_session", "token": token}
         writer.write((json.dumps(init_payload) + "\n").encode("utf-8"))
         await writer.drain()

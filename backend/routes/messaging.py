@@ -2,13 +2,13 @@
 messaging.py
 ------------
 
-Defines API routes for sending, receiving, and storing encrypted messages.  
-This module uses the IDEA algorithm for message encryption/decryption and keeps 
-all communication internal to the CipherTalk system (identified by usernames only).
+Define rotas da API para enviar, receber e armazenar mensagens criptografadas.
+Este módulo utiliza o algoritmo IDEA para criptografia/descriptografia de mensagens e mantém
+toda a comunicação interna ao sistema CipherTalk (identificada apenas por nomes de usuário).
 
 Endpoints:
-    - POST /messages/send: Send an encrypted message from one user to another.
-    - GET /messages/inbox/{username}: Retrieve all messages for a given user.
+    - POST /messages/send: Envia uma mensagem criptografada de um usuário para outro
+    - GET /messages/inbox/{username}: Recupera todas as mensagens de um determinado usuário
 """
 
 from datetime import datetime

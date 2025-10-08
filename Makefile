@@ -28,26 +28,6 @@ run:
 	$(PYTHON) -m uvicorn backend.main:app --reload
 
 # -------------------------
-# 🧪 Rodar testes
-# -------------------------
-test:
-	$(PYTHON) -m pytest -v --disable-warnings
-
-# -------------------------
-# 📊 Cobertura de testes
-# -------------------------
-coverage:
-	$(PYTHON) -m coverage run -m pytest
-	$(PYTHON) -m coverage report -m
-
-# -------------------------
-# 🧹 Verificação de código (lint)
-# -------------------------
-lint:
-	$(PYTHON) -m ruff check .
-	$(PYTHON) -m mypy .
-
-# -------------------------
 # 🔥 Limpar arquivos temporários
 # -------------------------
 clean:
@@ -90,9 +70,6 @@ help:
 	@echo "Comandos disponíveis:"
 	@echo "  make setup       → cria venv e instala dependências"
 	@echo "  make run         → executa o servidor FastAPI"
-	@echo "  make test        → executa testes unitários"
-	@echo "  make coverage    → gera relatório de cobertura"
-	@echo "  make lint        → verifica código com Ruff e MyPy"
 	@echo "  make clean       → remove caches e temporários"
 	@echo "  make update      → atualiza dependências"
 	@echo "  make db-init     → inicializa o banco de dados local"

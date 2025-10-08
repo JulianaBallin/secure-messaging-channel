@@ -2,34 +2,35 @@
 handlers.py (E2EE + Logging)
 ----------------------------
 
-Contains all secure, isolated async handlers for client actions:
+Contém todos os handlers assíncronos seguros e isolados para ações do cliente:
 - register
 - login
 - list_users
 - send_message
 
-Implements:
-- End-to-end encryption routing (RSA + IDEA)
-- Full event logging for auditability
-- Race-condition protection via asyncio.Lock
+Implementa:
+- Roteamento com criptografia ponta-a-ponta (RSA + IDEA)
+- Registro completo de eventos para auditoria
+- Proteção contra condições de corrida via asyncio.Lock
 """
 
 import asyncio
 import json
-import logging
 from typing import Dict
 from sqlalchemy.orm import Session
 
 from backend.auth.models import User, Message
 from backend.auth.security import hash_password, verify_password
 from backend.auth.auth_jwt import create_access_token, verify_access_token
+from backend.utils.logger_config import server_logger as log
 
-# 🔐 Global user lock — prevents concurrent write race conditions
+
+# Global user lock — prevents concurrent write race conditions
 USERS_LOCK = asyncio.Lock()
 
 
 # ======================================================
-# 📝 USER REGISTRATION
+# USER REGISTRATION
 # ======================================================
 async def handle_register(db: Session, writer, creds: dict) -> None:
     """Registers a new user securely with RSA public key."""
@@ -37,20 +38,20 @@ async def handle_register(db: Session, writer, creds: dict) -> None:
     password = creds.get("password")
     public_key_b64 = creds.get("public_key")
 
-    logging.info(f"[REGISTER_ATTEMPT] Tentativa de cadastro: {username}")
+    log.info(f"[REGISTER_ATTEMPT] Tentativa de cadastro: {username}")
 
     if not username or not password or not public_key_b64:
         msg = "❌ Dados incompletos para registro."
         writer.write(f"{msg}\n".encode("utf-8"))
         await writer.drain()
-        logging.warning(f"[REGISTER_FAIL] Campos ausentes para {username}")
+        log.warning(f"[REGISTER_FAIL] Campos ausentes para {username}")
         return
 
     async with USERS_LOCK:
         if db.query(User).filter(User.username == username).first():
             writer.write("❌ Usuário já existe.\n".encode("utf-8"))
             await writer.drain()
-            logging.warning(f"[REGISTER_FAIL] Usuário duplicado: {username}")
+            log.warning(f"[REGISTER_FAIL] Usuário duplicado: {username}")
             return
 
         new_user = User(
@@ -63,30 +64,30 @@ async def handle_register(db: Session, writer, creds: dict) -> None:
 
     writer.write("✅ Usuário criado com sucesso!\n".encode("utf-8"))
     await writer.drain()
-    logging.info(f"[REGISTER_OK] Usuário '{username}' cadastrado e chave pública armazenada.")
+    log.info(f"[REGISTER_OK] Usuário '{username}' cadastrado e chave pública armazenada.")
 
 
 # ======================================================
-# 🔑 USER LOGIN
+# USER LOGIN
 # ======================================================
 async def handle_login(db: Session, writer, creds: dict, online_users: Dict[str, asyncio.StreamWriter]):
     """Handles user authentication and token issuance."""
     username = creds.get("username")
     password = creds.get("password")
 
-    logging.info(f"[LOGIN_ATTEMPT] {username} tentando autenticar...")
+    log.info(f"[LOGIN_ATTEMPT] {username} tentando autenticar...")
 
     if not username or not password:
         writer.write("❌ Dados de login incompletos.\n".encode("utf-8"))
         await writer.drain()
-        logging.warning(f"[LOGIN_FAIL] Campos ausentes: {username}")
+        log.warning(f"[LOGIN_FAIL] Campos ausentes: {username}")
         return None, None
 
     user = db.query(User).filter(User.username == username).first()
     if not user or not verify_password(password, user.password_hash):
         writer.write("AUTH_FAILED\n".encode("utf-8"))
         await writer.drain()
-        logging.warning(f"[LOGIN_FAIL] Senha inválida ou usuário inexistente: {username}")
+        log.warning(f"[LOGIN_FAIL] Senha inválida ou usuário inexistente: {username}")
         return None, None
 
     token = create_access_token(username)
@@ -95,7 +96,7 @@ async def handle_login(db: Session, writer, creds: dict, online_users: Dict[str,
 
     writer.write((json.dumps({"token": token}) + "\n").encode("utf-8"))
     await writer.drain()
-    logging.info(f"[LOGIN_OK] {username} autenticado e marcado como online.")
+    log.info(f"[LOGIN_OK] {username} autenticado e marcado como online.")
 
     # --------------------------------------------------
     # Entregar mensagens pendentes (armazenadas)
@@ -108,7 +109,7 @@ async def handle_login(db: Session, writer, creds: dict, online_users: Dict[str,
     )
 
     if offline_msgs:
-        logging.info(f"[OFFLINE_DELIVERY] {len(offline_msgs)} mensagens pendentes para {username}")
+        log.info(f"[OFFLINE_DELIVERY] {len(offline_msgs)} mensagens pendentes para {username}")
         for msg in offline_msgs:
             payload = {
                 "from": db.query(User).get(msg.sender_id).username,
@@ -120,20 +121,20 @@ async def handle_login(db: Session, writer, creds: dict, online_users: Dict[str,
             await writer.drain()
             db.delete(msg)
         db.commit()
-        logging.info(f"[OFFLINE_OK] Mensagens entregues e removidas do banco para {username}")
+        log.info(f"[OFFLINE_OK] Mensagens entregues e removidas do banco para {username}")
 
     return username, token
 
 
 # ======================================================
-# 👥 USER LISTING
+# USER LISTING
 # ======================================================
 async def handle_list_users(db: Session, writer, message: dict, online_users: Dict[str, asyncio.StreamWriter]):
     """Returns list of all users with status and public key availability."""
     try:
         token = message.get("token")
         requester = verify_access_token(token)
-        logging.info(f"[LIST_REQUEST] {requester} solicitou lista de usuários.")
+        log.info(f"[LIST_REQUEST] {requester} solicitou lista de usuários.")
 
         users = db.query(User).all()
         users_info = [
@@ -147,21 +148,21 @@ async def handle_list_users(db: Session, writer, message: dict, online_users: Di
 
         writer.write((json.dumps({"users": users_info}) + "\n").encode("utf-8"))
         await writer.drain()
-        logging.info(f"[LIST_OK] Lista enviada a {requester} ({len(users)} usuários).")
+        log.info(f"[LIST_OK] Lista enviada a {requester} ({len(users)} usuários).")
 
     except Exception as e:
-        logging.error(f"[LIST_ERROR] {e}")
+        log.error(f"[LIST_ERROR] {e}")
         writer.write("❌ Falha ao listar usuários.\n".encode("utf-8"))
         await writer.drain()
 
 
 # ======================================================
-# 💬 ENCRYPTED MESSAGE ROUTING
+# ENCRYPTED MESSAGE ROUTING
 # ======================================================
 async def handle_send_message(db: Session, message: dict, online_users: Dict[str, asyncio.StreamWriter]):
     """
-    Routes or stores encrypted messages between users.
-    Supports IDEA (CBC) + RSA (OAEP) hybrid encryption.
+    Roteia ou armazena mensagens criptografadas entre usuários.
+    Suporta criptografia híbrida IDEA (CBC) + RSA (OAEP).
     """
     try:
         token = message.get("token")
@@ -173,13 +174,13 @@ async def handle_send_message(db: Session, message: dict, online_users: Dict[str
 
         # Validate fields
         if not all([receiver, encrypted_content, encrypted_key]):
-            logging.warning(f"[SEND_FAIL] Campos ausentes em mensagem de {sender}.")
+            log.warning(f"[SEND_FAIL] Campos ausentes em mensagem de {sender}.")
             return
 
         receiver_user = db.query(User).filter(User.username == receiver).first()
         sender_user = db.query(User).filter(User.username == sender).first()
         if not receiver_user:
-            logging.error(f"[SEND_ERROR] Destinatário '{receiver}' não encontrado.")
+            log.error(f"[SEND_ERROR] Destinatário '{receiver}' não encontrado.")
             return
 
         payload = {
@@ -194,7 +195,7 @@ async def handle_send_message(db: Session, message: dict, online_users: Dict[str
                 dest_writer = online_users[receiver]
                 dest_writer.write((json.dumps(payload) + "\n").encode("utf-8"))
                 await dest_writer.drain()
-                logging.info(f"[DELIVERED] E2EE mensagem de {sender} para {receiver}")
+                log.info(f"[DELIVERED] E2EE mensagem de {sender} para {receiver}")
             else:
                 msg_obj = Message(
                     sender_id=sender_user.id,
@@ -204,7 +205,7 @@ async def handle_send_message(db: Session, message: dict, online_users: Dict[str
                 )
                 db.add(msg_obj)
                 db.commit()
-                logging.info(f"[STORED] {receiver} offline. Mensagem E2EE armazenada.")
+                log.info(f"[STORED] {receiver} offline. Mensagem E2EE armazenada.")
 
     except Exception as e:
-        logging.error(f"[SEND_ERROR] {e}")
+        log.error(f"[SEND_ERROR] {e}")

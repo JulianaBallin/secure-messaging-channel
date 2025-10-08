@@ -2,7 +2,7 @@
 users.py
 --------
 
-Query functions related to the users table.
+Funções de consulta relacionadas à tabela de usuários.
 """
 
 from sqlalchemy.orm import Session

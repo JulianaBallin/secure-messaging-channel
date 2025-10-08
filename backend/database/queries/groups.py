@@ -2,7 +2,7 @@
 groups.py
 ---------
 
-Query functions related to groups and group membership.
+Funções de consulta relacionadas a grupos e membros de grupos.
 """
 
 from sqlalchemy.orm import Session

@@ -2,12 +2,12 @@
 models.py
 ----------
 
-SQLAlchemy models for authentication and messaging.
-Covers users, groups, group membership, and messages (private or group).
+Modelos SQLAlchemy para autenticação e mensagens.
+Abre usuários, grupos, membros de grupos e mensagens (privadas ou em grupo).
 
-Rules:
-- Private message: receiver_id != NULL and group_id == NULL
-- Group message:   receiver_id == NULL and group_id != NULL
+Regras:
+- Mensagem privada: receiver_id != NULL e group_id == NULL
+- Mensagem em grupo: receiver_id == NULL e group_id != NULL
 """
 
 from __future__ import annotations

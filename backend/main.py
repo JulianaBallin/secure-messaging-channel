@@ -2,13 +2,13 @@
 main.py
 --------
 
-Entry point of the CipherTalk secure communication API.  
-This file initializes the FastAPI application, sets up the main routes for 
-authentication and messaging, and defines the root endpoint.
+Ponto de entrada da API de comunicação segura CipherTalk.
+Este arquivo inicializa a aplicação FastAPI, configura as rotas principais para
+autenticação e mensagens, e define o endpoint raiz.
 
-Modules:
-    - backend.auth.routes: handles user registration, login, and authentication.
-    - backend.routes.messaging: manages encrypted message exchange.
+Módulos:
+    - backend.auth.routes: gerencia registro, login e autenticação de usuários
+    - backend.routes.messaging: gerencia troca de mensagens criptografadas
 """
 
 

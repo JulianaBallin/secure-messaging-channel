@@ -2,8 +2,8 @@
 connection.py
 --------------
 
-Creates and manages the database connection using SQLAlchemy.
-Ensures that the SQLite database is always stored in backend/database/cipher_talk.db.
+Cria e gerencia a conexão com o banco de dados usando SQLAlchemy.
+Garante que o banco de dados SQLite seja sempre armazenado em backend/database/cipher_talk.db.
 """
 
 from sqlalchemy import create_engine

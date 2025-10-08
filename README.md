@@ -21,7 +21,7 @@
 - **cryptography** – geração e gerenciamento de chaves RSA  
 - **pycryptodome** – implementação do algoritmo IDEA  
 - **Flask** ou **FastAPI** – criação da API de comunicação  
-- **SQLite** ou **PostgreSQL** – armazenamento seguro de usuários e mensagens  
+- **SQLite** – armazenamento seguro de usuários e mensagens  
 
 ---
 
@@ -29,80 +29,6 @@
 ```
 secure-messaging-channel/
 ├── backend
-│   ├── auth
-│   │   ├── admin_cli.py
-│   │   ├── auth_jwt.py
-│   │   ├── __init__.py
-│   │   ├── models.py
-│   │   ├── routes.py
-│   │   └── security.py
-│   ├── config.py
-│   ├── crypto
-│   │   ├── idea_manager.py
-│   │   ├── __init__.py
-│   │   └── rsa_manager.py
-│   ├── database
-│   │   ├── cipher_talk.db
-│   │   ├── connection.py
-│   │   ├── __init__.py
-│   │   └── queries
-│   │       ├── groups.py
-│   │       ├── __init__.py
-│   │       ├── messages.py
-│   │       └── users.py
-│   ├── groups
-│   │   └── admin_cli.py
-│   ├── __init__.py
-│   ├── main.py
-│   ├── messages
-│   │   ├── admin_cli.py
-│   │   └── __init__.py
-│   ├── routes
-│   │   ├── __init__.py
-│   │   └── messaging.py
-│   └── server
-│       ├── handlers.py
-│       ├── __init__.py
-│       └── server.py
-├── cert.pem
-├── checklist.MD
-├── cipher_talk.db
-├── client
-│   ├── auth
-│   │   ├── __init__.py
-│   │   ├── login_cli.py
-│   │   ├── session_manager.py
-│   │   └── signup_cli.py
-│   ├── __init__.py
-│   ├── menus
-│   │   ├── __init__.py
-│   │   ├── menu_inicial.py
-│   │   └── menu_pos_login.py
-│   ├── messages
-│   │   ├── __init__.py
-│   │   └── message_cli.py
-│   ├── network
-│   │   ├── client_socket.py
-│   │   └── __init__.py
-│   ├── run_cli.py
-│   └── utils
-│       ├── helpers.py
-│       ├── __init__.py
-│       ├── logger.py
-│       └── validator.py
-├── init_db.py
-├── key.pem
-├── keys
-│   ├── JulianaBallin_private.pem
-│   └── JulianaTest2_private.pem
-├── LICENSE
-├── logs
-│   └── server.log
-├── Makefile
-├── README.md
-├── requirements.txt
-├── run_cli.py
-└── run_queries.py
      
 ```
 

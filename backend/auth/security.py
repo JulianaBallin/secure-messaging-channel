@@ -2,7 +2,7 @@
 security.py
 ------------
 
-Implements secure password hashing and verification using bcrypt.
+Implementa hash e verificação segura de senhas usando bcrypt.
 """
 
 from passlib.context import CryptContext
