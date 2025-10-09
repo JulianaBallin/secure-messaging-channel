@@ -18,14 +18,14 @@ from getpass import getpass
 from base64 import b64encode
 from dotenv import load_dotenv
 
-# 🔁 Importar módulos internos
+# Importar módulos internos
 sys.path.append(os.path.dirname(__file__))
 
 from backend.crypto.rsa_manager import generate_rsa_keypair
 from backend.messages.cli import send_encrypted_message, read_and_decrypt_messages
 from backend.messages.listener import start_listener
 
-# ⚙️ Login centralizado (substitui client/auth/login_cli.py)
+# Login centralizado (substitui client/auth/login_cli.py)
 async def perform_login():
     """Executa login seguro com o servidor (TLS) e retorna (username, token)."""
     import ssl
@@ -34,20 +34,20 @@ async def perform_login():
         username = input("👤 Nome de usuário: ").strip()
         password = getpass("🔑 Senha: ")
 
-        # 🔒 Configurar contexto TLS
+        # Configurar contexto TLS
         ssl_context = ssl.create_default_context()
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
 
-        # 🌐 Conectar ao servidor seguro
+        # Conectar ao servidor seguro
         reader, writer = await asyncio.open_connection(HOST, PORT, ssl=ssl_context)
 
-        # 📤 Enviar payload de login
+        # Enviar payload de login
         payload = {"action": "login", "username": username, "password": password}
         writer.write((json.dumps(payload) + "\n").encode("utf-8"))
         await writer.drain()
 
-        # 📥 Receber resposta
+        # Receber resposta
         response = await reader.readline()
         writer.close()
         await writer.wait_closed()
@@ -56,7 +56,7 @@ async def perform_login():
             print("❌ Falha ao conectar ao servidor.")
             return None, None
 
-        # 🧩 Processar resposta
+        # Processar resposta
         data = json.loads(response.decode().strip())
         if "token" not in data:
             print("❌ Usuário ou senha inválidos.")
@@ -73,12 +73,12 @@ async def perform_login():
         return None, None
 
 
-# 🌱 Carregar variáveis de ambiente
+# Carregar variáveis de ambiente
 load_dotenv()
 HOST = os.getenv("SERVER_HOST", "127.0.0.1")
 PORT = int(os.getenv("SERVER_PORT", "8888"))
 
-# 📁 Diretórios necessários
+# Diretórios necessários
 os.makedirs("keys", exist_ok=True)
 os.makedirs("logs", exist_ok=True)
 
@@ -96,7 +96,7 @@ def validar_senha(password: str) -> bool:
 
 
 # ======================================================
-# 📝 Cadastro de usuário
+# Cadastro de usuário
 # ======================================================
 async def cadastrar_usuario():
     """Cadastra um novo usuário com par RSA."""
@@ -118,16 +118,16 @@ async def cadastrar_usuario():
         print("❌ A senha deve ter pelo menos 8 caracteres, 1 maiúscula, 1 número e 1 caractere especial.")
         return
 
-    # 🔐 Gera par RSA
+    # Gera par RSA
     public_key, private_key = generate_rsa_keypair()
 
-    # 💾 Salva chave privada localmente
+    # Salva chave privada localmente
     private_path = f"keys/{username}_private.pem"
     with open(private_path, "wb") as f:
         f.write(private_key)
     print(f"🔑 Chave privada salva em: {private_path}")
 
-    # 📤 Envia registro ao servidor
+    # Envia registro ao servidor
     public_key_b64 = b64encode(public_key).decode()
     reader, writer = await asyncio.open_connection(HOST, PORT)
     payload = {
@@ -147,7 +147,7 @@ async def cadastrar_usuario():
 
 
 # ======================================================
-# 📋 Listar usuários
+# Listar usuários
 # ======================================================
 async def listar_usuarios(token: str):
     """Lista usuários online/offline."""
@@ -173,7 +173,7 @@ async def listar_usuarios(token: str):
 
 
 # ======================================================
-# 🔐 Login e menu interno
+# Login e menu interno
 # ======================================================
 async def fazer_login():
     """Login + menu interno pós-autenticação."""
@@ -183,7 +183,7 @@ async def fazer_login():
         input("\nPressione ENTER para voltar ao menu inicial...")
         return
 
-    # 🧭 Inicia o listener assíncrono para receber mensagens em tempo real
+    # Inicia o listener assíncrono para receber mensagens em tempo real
     asyncio.create_task(start_listener(username, token, HOST, PORT))
 
     while True:
@@ -213,7 +213,7 @@ async def fazer_login():
 
 
 # ======================================================
-# 🧭 Menu principal
+# Menu principal
 # ======================================================
 async def menu_principal():
     """Menu inicial do cliente."""
@@ -239,7 +239,7 @@ async def menu_principal():
 
 
 # ======================================================
-# ▶️ Execução direta
+# ▶Execução direta
 # ======================================================
 if __name__ == "__main__":
     try:

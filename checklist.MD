@@ -80,33 +80,123 @@
 
 ## 💾 Pessoa 3 — Banco de Dados e Persistência (JUJUBA)
 
-### 🧱 Caminhos e status
+### Caminhos e Status Geral
 
-- **Banco SQLite com SQLAlchemy**
-  📂 `backend/database/connection.py`  
-  ➤ Implementado, cria o engine e gerencia a sessão.  
-  ➤ Revisar `ensure_database()` para confirmar criação de tabelas automáticas.  
+Responsável pela **camada de persistência e integridade de dados** do CipherTalk.  
+Essa parte garante que **usuários, mensagens e grupos sejam armazenados de forma segura, criptografada e auditável**, com suporte total a consultas e logs de auditoria.
 
-- **Modelagem de tabelas**
-  📂 `backend/auth/models.py`  
-  ➤ Tabelas `User` e `Message` implementadas.  
-  ➤ Falta `Group` e `GroupMembers`.  
 
-- **Consultas e funções**
-  📂 `backend/database/queries/`  
-  ➤ Arquivos `users.py` e `messages.py` contêm consultas básicas.  
-  ➤ Adicionar funções para histórico, grupos e mensagens pendentes.  
 
-- **Histórico criptografado**
-  📂 `backend/server/handlers.py` + `backend/database/messages.py`  
-  ➤ Parcialmente implementado (mensagens armazenadas cifradas).  
-  ➤ Falta descriptografia automática no recebimento.  
+### 🗄️ Banco SQLite + Conexão SQLAlchemy  
+📂 `backend/database/connection.py`
 
-- **Logs de banco**
-  📂 `backend/utils/logger_config.py`  
-  ➤ Logger `database_logger` ainda não existe — criar para `logs/database.log`.  
+✅ **Implementado**
+- Cria e gerencia o `engine` e `SessionLocal` (ORM do SQLAlchemy).  
+- Banco fixo e seguro em `backend/database/cipher_talk.db`.  
+- Compatível com o servidor (`ensure_database()` integrado ao boot do backend).  
+- Totalmente integrado aos loggers (`database.log` registra inicialização e conexões).
+
+🔧 **Pendentes**
+- Adicionar função `ensure_database()` reutilizável no CLI para setup local.  
+- Criar log adicional de verificação automática do esquema (`[DB_VERIFY]`).
+
+
+### 🧩 Modelagem de Tabelas  
+📂 `backend/auth/models.py`
+
+✅ **Implementado**
+- Tabelas: `User`, `Message`, `Group`, `GroupMember`.  
+- Relacionamentos configurados com integridade referencial e *constraints* completas.  
+- Suporte tanto a mensagens privadas quanto de grupo (regra XOR validada via `CheckConstraint`).  
+- Estrutura pronta para consultas avançadas de auditoria (joins entre usuários, mensagens e grupos).
+
+🔧 **Pendentes**
+- Adicionar flag `User.is_online` (refletindo cache do servidor).  
+- Inserir `cascade="all, delete-orphan"` nos relacionamentos dependentes (`sent_messages`, `received_messages`, `members`, `messages`).  
+- Revisar indexação por data e chaves compostas para otimizar consultas grandes.
+
+
+### 💬 Consultas e Funções SQL  
+📂 `backend/database/queries/`
+
+✅ **Implementado**
+- `users.py`: consultas completas (`list_all_users`, `get_user_by_username`, `update_public_key`).  
+- `messages.py`: histórico, mensagens pendentes e descriptografia (`decrypt_stored_message`).  
+- `groups.py`: criação, adição, remoção e listagem de membros, com logs administrativos.  
+- Consultas compatíveis com o **painel de auditoria `run_queries.py`**.
+
+🔧 **Pendentes**
+- Implementar funções de manutenção e consistência:  
+  - `transfer_group_admin(db, group_name)` — promove novo admin se o atual sair.  
+  - `delete_empty_groups(db)` — remove grupos órfãos sem membros.  
+- Adicionar logs explícitos de transação (`commit`, `rollback`) e falhas SQL.
+
+
+### 🔐 Histórico Criptografado  
+📂 `backend/database/queries/messages.py` + `backend/server/handlers.py`
+
+✅ **Implementado**
+- Armazenamento de mensagens 100% criptografado (IDEA + RSA híbrido).  
+- Função `decrypt_stored_message()` permite auditoria e descriptografia local segura.  
+- Logs integrados (`database.log` + `crypto.log`) documentam envio, recebimento e armazenamento.  
+- Estrutura preparada para descriptografia automática no recebimento.
+
+🔧 **Pendentes**
+- Integrar descriptografia automática no fluxo de login (`handle_login`).  
+- Criar cache opcional de mensagens descriptografadas (modo auditoria offline).  
+
+
+### 🧾 Logs de Banco de Dados  
+📂 `backend/utils/logger_config.py`
+
+✅ **Implementado**
+- Logger `database_logger` com rotação automática (`logs/database.log`).  
+- Saída colorida e rastreamento de ações SQL e ORM.  
+- Integração total com os loggers `server_logger`, `auth_logger` e `crypto_logger`.  
+- Mensagens de auditoria registradas a cada consulta (`[AUDIT]` tags).
+
+🔧 **Pendentes**
+- Adicionar logs de transação detalhados:
+  - `[TX_COMMIT]`, `[TX_ROLLBACK]`, `[TX_PENDING]`.  
+- (Opcional) Criar logger secundário `transaction_logger` para auditoria de transações longas.
+
+
+### 🧮 Painel de Auditoria (CLI de Inspeção)
+📂 `backend/database/run_queries.py`
+
+✅ **Implementado**
+- Painel interativo somente leitura (modo auditoria).  
+- Consultas disponíveis:  
+  1️⃣  Listar usuários  
+  2️⃣  Buscar usuário (detalhes + grupos)  
+  3️⃣  Listar grupos  
+  4️⃣  Buscar grupo (informações + membros)  
+  5️⃣  Listar usuários vinculados a grupos  
+  6️⃣  Ver mensagens privadas (pares)  
+  7️⃣  Ver mensagens de grupo  
+- Todas as consultas são `SELECT` (sem alterações no banco).  
+- Logs automáticos de cada ação no `database.log` com tag `[AUDIT]`.
+
+🔧 **Pendentes**
+- Adicionar exportador opcional (`--export`) para gerar relatórios `.csv`.  
+- Criar modo de filtro temporal (`--since <data>`) para limitar histórico em consultas grandes.
+
+
+### ✅ Status Resumido
+| Área | Status | Observações |
+|------|---------|-------------|
+| Conexão SQLite | 🟩 Completa | Pequenos ajustes de log |
+| Modelagem ORM | 🟩 Completa | Melhorar cascatas |
+| Consultas SQL | 🟨 Parcial | Faltam funções de manutenção |
+| Histórico Criptografado | 🟨 Parcial | Integrar descriptografia automática |
+| Logs de Banco | 🟩 Completa | Adicionar rastreamento de transações |
+| Painel de Auditoria | 🟩 Completa | Adicionar exportação opcional |
 
 ---
+
+
+---
+
 
 ## 💬 Pessoa 4 — Interface CLI e Experiência do Usuário
 

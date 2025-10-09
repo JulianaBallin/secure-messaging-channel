@@ -1,76 +1,106 @@
 """
-models.py
-----------
+models.py 
+---------
 
-Modelos SQLAlchemy para autenticação e mensagens.
-Abre usuários, grupos, membros de grupos e mensagens (privadas ou em grupo).
+Modelos de dados do CipherTalk — compatíveis com SQLAlchemy 2.0.
 
-Regras:
-- Mensagem privada: receiver_id != NULL e group_id == NULL
-- Mensagem em grupo: receiver_id == NULL e group_id != NULL
+Inclui:
+- Usuários com senhas hash e chaves públicas RSA.
+- Mensagens privadas e de grupo (armazenadas criptografadas).
+- Grupos com controle de membros e administrador.
+- Integridade garantida via constraints e cascatas.
 """
 
 from __future__ import annotations
 from datetime import datetime
-from sqlalchemy import LargeBinary
-
 from sqlalchemy import (
     Column, Integer, String, DateTime, Text, ForeignKey,
-    CheckConstraint, UniqueConstraint, Index
+    LargeBinary, CheckConstraint, UniqueConstraint, Index, Boolean
 )
 from sqlalchemy.orm import relationship, Mapped, mapped_column
-
 from backend.database.connection import Base
 
 
+# ======================================================
+# Usuário
+# ======================================================
 class User(Base):
-    """User entity with unique username and password hash."""
+    """Representa um usuário registrado no sistema CipherTalk."""
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     public_key: Mapped[bytes] = mapped_column(LargeBinary, nullable=True)
+    is_online: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
-    # Relationships
+    # Relacionamentos
     sent_messages: Mapped[list["Message"]] = relationship(
-        "Message", back_populates="sender", foreign_keys="Message.sender_id"
+        "Message",
+        back_populates="sender",
+        foreign_keys="Message.sender_id",
+        cascade="all, delete-orphan",
     )
+
     received_messages: Mapped[list["Message"]] = relationship(
-        "Message", back_populates="receiver", foreign_keys="Message.receiver_id"
+        "Message",
+        back_populates="receiver",
+        foreign_keys="Message.receiver_id",
+        cascade="all, delete-orphan",
     )
-    groups: Mapped[list["GroupMember"]] = relationship("GroupMember", back_populates="user")
+
+    group_memberships: Mapped[list["GroupMember"]] = relationship(
+        "GroupMember", back_populates="user", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
-        return f"User(id={self.id!r}, username={self.username!r})"
+        return f"<User(username='{self.username}', online={self.is_online})>"
 
 
+# ======================================================
+# Grupo de usuários
+# ======================================================
 class Group(Base):
-    """Group entity for multi-user conversations."""
+    """Entidade que representa um grupo de conversa entre múltiplos usuários."""
     __tablename__ = "groups"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    admin_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
-    members: Mapped[list["GroupMember"]] = relationship("GroupMember", back_populates="group")
-    messages: Mapped[list["Message"]] = relationship("Message", back_populates="group")
+    # Relacionamentos
+    admin: Mapped["User"] = relationship("User")
+    members: Mapped[list["GroupMember"]] = relationship(
+        "GroupMember", back_populates="group", cascade="all, delete-orphan"
+    )
+    messages: Mapped[list["Message"]] = relationship(
+        "Message", back_populates="group", cascade="all, delete-orphan"
+    )
 
     def __repr__(self) -> str:
-        return f"Group(id={self.id!r}, name={self.name!r})"
+        return f"<Group(name='{self.name}', admin_id={self.admin_id})>"
 
 
+# ======================================================
+# Associação de membros a grupos
+# ======================================================
 class GroupMember(Base):
-    """Join table between users and groups, with uniqueness per (user_id, group_id)."""
+    """Tabela de associação entre usuários e grupos."""
     __tablename__ = "group_members"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    group_id: Mapped[int] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    group_id: Mapped[int] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     joined_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
-    user: Mapped["User"] = relationship("User", back_populates="groups")
+    # Relacionamentos
+    user: Mapped["User"] = relationship("User", back_populates="group_memberships")
     group: Mapped["Group"] = relationship("Group", back_populates="members")
 
     __table_args__ = (
@@ -78,39 +108,55 @@ class GroupMember(Base):
     )
 
     def __repr__(self) -> str:
-        return f"GroupMember(user_id={self.user_id!r}, group_id={self.group_id!r})"
+        return f"<GroupMember(user_id={self.user_id}, group_id={self.group_id})>"
 
 
+# ======================================================
+# Mensagem
+# ======================================================
 class Message(Base):
     """
-    Message entity. Can be private (receiver_id set) or group (group_id set).
-    Exactly one of (receiver_id, group_id) must be non-null.
+    Entidade de mensagem — pode ser privada (entre 2 usuários)
+    ou em grupo (vários usuários).
+
+    Somente uma das colunas receiver_id ou group_id deve estar definida.
+    O conteúdo e a chave simétrica são armazenados cifrados.
     """
     __tablename__ = "messages"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    sender_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    receiver_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
-    group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), nullable=True, index=True)
+    sender_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    receiver_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    group_id: Mapped[int | None] = mapped_column(
+        ForeignKey("groups.id", ondelete="CASCADE"), nullable=True, index=True
+    )
 
     content_encrypted: Mapped[str] = mapped_column(Text, nullable=False)
-    key_encrypted = Column(Text, nullable=True)
+    key_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True, nullable=False)
 
-    sender: Mapped["User"] = relationship("User", back_populates="sent_messages", foreign_keys=[sender_id])
-    receiver: Mapped["User"] = relationship("User", back_populates="received_messages", foreign_keys=[receiver_id])
+    # Relacionamentos
+    sender: Mapped["User"] = relationship(
+        "User", back_populates="sent_messages", foreign_keys=[sender_id]
+    )
+    receiver: Mapped["User"] = relationship(
+        "User", back_populates="received_messages", foreign_keys=[receiver_id]
+    )
     group: Mapped["Group"] = relationship("Group", back_populates="messages")
 
     __table_args__ = (
-        # ensure XOR-like rule: exactly one target (private OR group)
         CheckConstraint(
             "(receiver_id IS NOT NULL AND group_id IS NULL) OR "
             "(receiver_id IS NULL AND group_id IS NOT NULL)",
-            name="ck_message_private_or_group"
+            name="ck_message_private_or_group",
         ),
         Index("ix_messages_sender_ts", "sender_id", "timestamp"),
     )
 
     def __repr__(self) -> str:
-        target = f"receiver_id={self.receiver_id!r}" if self.receiver_id else f"group_id={self.group_id!r}"
-        return f"Message(id={self.id!r}, sender_id={self.sender_id!r}, {target}, ts={self.timestamp!r})"
+        destino = f"receiver_id={self.receiver_id}" if self.receiver_id else f"group_id={self.group_id}"
+        return f"<Message(sender={self.sender_id}, {destino}, ts={self.timestamp})>"

@@ -1,139 +1,220 @@
 """
-run_queries.py
---------------
+run_queries.py 
+----------------
 
-Script interativo de consulta ao banco de dados CipherTalk.
-Permite visualizar usuários cadastrados, status online/offline,
-mensagens, grupos e membros diretamente no terminal.
+Painel interativo de auditoria e validação de persistência do banco CipherTalk.
+
+Recursos:
+- Todas as consultas são somente leitura (SELECT).
+- Exibe usuários, grupos, membros e mensagens (pares e grupos).
+- Registra logs de auditoria no arquivo logs/database.log.
 """
 
 from backend.database.connection import SessionLocal
-from backend.database.queries.users import get_all_users, get_user_by_username
-from backend.database.queries.messages import get_user_messages, get_offline_messages
-from backend.database.queries.groups import get_all_groups, get_group_members
+from backend.database.queries.users import list_all_users, get_user_by_username
+from backend.database.queries.groups import list_members
+from backend.database.queries.messages import get_user_messages, get_group_messages
+from backend.auth.models import Group, GroupMember, User
+from backend.utils.logger_config import database_logger as dblog
 
-# Cria sessão com o banco
 db = SessionLocal()
 
 
+# ======================================================
+# 1 - Listar todos os usuários
+# ======================================================
 def listar_usuarios():
-    """Lista todos os usuários com status online/offline."""
-    print("\n=== 👤 Usuários cadastrados ===")
-    users = get_all_users(db)
+    print("\n=== 👥 Usuários cadastrados ===")
+    users = db.query(User).all()
     if not users:
         print("⚠️ Nenhum usuário cadastrado.")
         return
     for u in users:
-        status = "🟢 Online" if u["online"] else "⚫ Offline"
-        print(f"- ID: {u['id']} | {u['username']} | Criado em: {u['created_at']} | {status}")
+        print(f"- ID: {u.id:<3} | Nome: {u.username:<20} | Criado em: {u.created_at}")
+    dblog.info("[AUDIT] Consulta: listar_usuarios executada.")
 
 
+# ======================================================
+# 2 - Buscar usuário (todas as informações)
+# ======================================================
 def buscar_usuario():
-    """Busca um usuário pelo nome de usuário."""
-    username = input("Digite o nome de usuário: ").strip()
+    username = input("🔍 Nome do usuário: ").strip()
     user = get_user_by_username(db, username)
-    if user:
-        print(f"\n✅ Usuário encontrado:")
-        print(f"ID: {user.id}")
-        print(f"Username: {user.username}")
-        print(f"Criado em: {user.created_at}")
-    else:
+    if not user:
         print("❌ Usuário não encontrado.")
-
-
-def mensagens_usuario():
-    """Exibe mensagens enviadas e recebidas de um usuário."""
-    username = input("Digite o nome de usuário: ").strip()
-    messages = get_user_messages(db, username)
-    if not messages["sent"] and not messages["received"]:
-        print("⚠️ Nenhuma mensagem encontrada.")
         return
 
-    print("\n=== ✉️ Mensagens enviadas ===")
-    for m in messages["sent"]:
-        print(f"→ ID: {m.id} | Para: {m.receiver.username} | Conteúdo: {m.content_encrypted} | {m.timestamp}")
+    print(f"\n=== 📋 Detalhes de {user.username} ===")
+    print(f"ID: {user.id}")
+    print(f"Nome de usuário: {user.username}")
+    print(f"Senha hash: {user.password_hash}")
+    print(f"Chave pública armazenada: {'✅ Sim' if user.public_key else '❌ Não'}")
+    print(f"Data de criação: {user.created_at}")
 
-    print("\n=== 📩 Mensagens recebidas ===")
-    for m in messages["received"]:
-        print(f"← ID: {m.id} | De: {m.sender.username} | Conteúdo: {m.content_encrypted} | {m.timestamp}")
-
-
-def mensagens_offline():
-    """Mostra mensagens não entregues a um usuário."""
-    username = input("Digite o nome de usuário: ").strip()
-    messages = get_offline_messages(db, username)
-    if not messages:
-        print("⚠️ Nenhuma mensagem offline encontrada.")
-        return
-
-    print("\n=== 📬 Mensagens não entregues ===")
-    for m in messages:
-        print(f"De: {m.sender.username} | Conteúdo: {m.content_encrypted} | {m.timestamp}")
+    # Exibir grupos pertencentes
+    memberships = db.query(GroupMember).filter(GroupMember.user_id == user.id).all()
+    if memberships:
+        print("\n👥 Grupos que participa:")
+        for m in memberships:
+            grupo = db.query(Group).get(m.group_id)
+            print(f"- {grupo.name}")
+    else:
+        print("\n👥 Não pertence a nenhum grupo.")
+    dblog.info(f"[AUDIT] Consulta: buscar_usuario({username}) executada.")
 
 
+# ======================================================
+# 3 - Listar todos os grupos
+# ======================================================
 def listar_grupos():
-    """Lista todos os grupos existentes."""
-    print("\n=== 👥 Grupos ===")
-    groups = get_all_groups(db)
-    if not groups:
+    print("\n=== 🧱 Grupos cadastrados ===")
+    grupos = db.query(Group).all()
+    if not grupos:
         print("⚠️ Nenhum grupo cadastrado.")
         return
+    for g in grupos:
+        print(f"- ID: {g.id:<3} | Nome: {g.name:<20} | Criado em: {g.created_at}")
+    dblog.info("[AUDIT] Consulta: listar_grupos executada.")
 
-    for g in groups:
-        print(f"- ID: {g.id} | Nome: {g.name} | Criado em: {g.created_at}")
 
-
-def membros_grupo():
-    """Lista membros de um grupo pelo ID."""
-    group_id = input("Digite o ID do grupo: ").strip()
-    try:
-        group_id = int(group_id)
-    except ValueError:
-        print("❌ ID inválido.")
+# ======================================================
+# 4 - Buscar grupo (informações + membros)
+# ======================================================
+def buscar_grupo():
+    nome = input("🔍 Nome do grupo: ").strip()
+    grupo = db.query(Group).filter(Group.name == nome).first()
+    if not grupo:
+        print("❌ Grupo não encontrado.")
         return
 
-    members = get_group_members(db, group_id)
-    if not members:
-        print("⚠️ Nenhum membro encontrado para esse grupo.")
+    print(f"\n=== 📋 Detalhes do Grupo '{grupo.name}' ===")
+    print(f"ID: {grupo.id}")
+    print(f"Criado em: {grupo.created_at}")
+
+    membros = list_members(db, grupo.name)
+    if not membros:
+        print("⚠️ Nenhum membro encontrado.")
+    else:
+        print("\n👥 Membros do grupo:")
+        for m in membros:
+            print(f"- {m.user.username}")
+
+    dblog.info(f"[AUDIT] Consulta: buscar_grupo({nome}) executada.")
+
+
+# ======================================================
+# 5 - Listar usuários que pertencem a algum grupo
+# ======================================================
+def usuarios_em_grupos():
+    print("\n=== 👥 Usuários com participação em grupos ===")
+    membros = db.query(User.username, Group.name).join(GroupMember).join(Group).all()
+    if not membros:
+        print("⚠️ Nenhum vínculo entre usuários e grupos encontrado.")
+        return
+    for username, groupname in membros:
+        print(f"- {username:<20} → {groupname}")
+    dblog.info("[AUDIT] Consulta: usuarios_em_grupos executada.")
+
+
+# ======================================================
+# 6 - Ver mensagens de usuário (comunicação em pares)
+# ======================================================
+def mensagens_pares():
+    username = input("💬 Nome do usuário: ").strip()
+    messages = get_user_messages(db, username)
+    sent = messages.get("sent", [])
+    received = messages.get("received", [])
+
+    if not sent and not received:
+        print("⚠️ Nenhuma mensagem privada encontrada.")
         return
 
-    print("\n=== 👤 Membros do grupo ===")
-    for m in members:
-        print(f"- ID: {m['id']} | {m['username']}")
+    print("\n=== ✉️ Mensagens Enviadas ===")
+    for m in sent:
+        if m.receiver:
+            print(f"→ Para: {m.receiver.username:<15} | {m.timestamp} | Cifrada: {m.content_encrypted[:50]}...")
+
+    print("\n=== 📩 Mensagens Recebidas ===")
+    for m in received:
+        if m.sender:
+            print(f"← De: {m.sender.username:<15} | {m.timestamp} | Cifrada: {m.content_encrypted[:50]}...")
+    dblog.info(f"[AUDIT] Consulta: mensagens_pares({username}) executada.")
 
 
+# ======================================================
+# 7 - Ver mensagens de usuário (grupos)
+# ======================================================
+def mensagens_grupos():
+    username = input("👥 Nome do usuário: ").strip()
+    grupos = (
+        db.query(Group)
+        .join(GroupMember, GroupMember.group_id == Group.id)
+        .join(User, User.id == GroupMember.user_id)
+        .filter(User.username == username)
+        .all()
+    )
+
+    if not grupos:
+        print("⚠️ Esse usuário não pertence a nenhum grupo.")
+        return
+
+    print(f"\n=== 💬 Mensagens em grupos de {username} ===")
+    for g in grupos:
+        msgs = get_group_messages(db, g.name)
+        if not msgs:
+            print(f"\n📭 Grupo {g.name}: sem mensagens registradas.")
+            continue
+        print(f"\n📨 Grupo {g.name}:")
+        for m in msgs:
+            remetente = m.sender.username if m.sender else "Desconhecido"
+            print(f"   • {remetente:<15} → {m.timestamp} | {m.content_encrypted[:50]}...")
+    dblog.info(f"[AUDIT] Consulta: mensagens_grupos({username}) executada.")
+
+
+# ======================================================
+# Menu principal (somente leitura)
+# ======================================================
 def menu():
-    """Menu interativo de consultas."""
     while True:
-        print("\n=== 🛠️ Consultas ao Banco CipherTalk ===")
+        print("\n=== 🧾 Painel de Auditoria — CipherTalk ===")
         print("1️⃣  - Listar todos os usuários")
-        print("2️⃣  - Buscar usuário por nome")
-        print("3️⃣  - Ver mensagens de um usuário")
-        print("4️⃣  - Ver mensagens offline de um usuário")
-        print("5️⃣  - Listar grupos")
-        print("6️⃣  - Ver membros de um grupo")
+        print("2️⃣  - Buscar usuário (todas as informações)")
+        print("3️⃣  - Listar todos os grupos")
+        print("4️⃣  - Buscar grupo (informações + membros)")
+        print("5️⃣  - Listar usuários que pertencem a algum grupo")
+        print("6️⃣  - Ver mensagens de usuário (pares)")
+        print("7️⃣  - Ver mensagens de usuário (grupos)")
         print("0️⃣  - Sair")
 
-        choice = input("Escolha uma opção: ").strip()
-
-        if choice == "1":
+        opcao = input("Escolha uma opção: ").strip()
+        if opcao == "1":
             listar_usuarios()
-        elif choice == "2":
+        elif opcao == "2":
             buscar_usuario()
-        elif choice == "3":
-            mensagens_usuario()
-        elif choice == "4":
-            mensagens_offline()
-        elif choice == "5":
+        elif opcao == "3":
             listar_grupos()
-        elif choice == "6":
-            membros_grupo()
-        elif choice == "0":
-            print("👋 Encerrando consultas...")
+        elif opcao == "4":
+            buscar_grupo()
+        elif opcao == "5":
+            usuarios_em_grupos()
+        elif opcao == "6":
+            mensagens_pares()
+        elif opcao == "7":
+            mensagens_grupos()
+        elif opcao == "0":
+            print("👋 Encerrando painel de auditoria.")
             break
         else:
             print("❌ Opção inválida.")
 
 
+# ======================================================
+# Execução direta
+# ======================================================
 if __name__ == "__main__":
-    menu()
+    dblog.info("🔍 Painel de auditoria do banco iniciado (modo leitura).")
+    try:
+        menu()
+    finally:
+        db.close()
+        dblog.info("🧹 Sessão SQLAlchemy encerrada (modo leitura).")

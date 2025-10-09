@@ -8,8 +8,6 @@ IMPORTANT: Models must be imported BEFORE create_all() so they get registered.
 
 from sqlalchemy import inspect
 from backend.database.connection import Base, engine
-
-# ✅ Importa os modelos para registrar as tabelas no Base.metadata
 from backend.auth.models import User, Group, GroupMember, Message  # noqa: F401
 
 def main() -> None:
