@@ -198,7 +198,7 @@ Essa parte garante que **usuários, mensagens e grupos sejam armazenados de form
 ---
 
 
-## 💬 Pessoa 4 — Interface CLI e Experiência do Usuário
+## 💬 Pessoa 4 — Interface CLI e Experiência do Usuário (Ana Bia)
 
 ### 🧱 Caminhos e status
 
