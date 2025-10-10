@@ -1,6 +1,6 @@
 """
-run_queries.py 
-----------------
+run_queries.py
+---------------
 
 Painel interativo de auditoria e validação de persistência do banco CipherTalk.
 
@@ -9,19 +9,21 @@ Recursos:
 - Exibe usuários, grupos, membros e mensagens (pares e grupos).
 - Registra logs de auditoria no arquivo logs/database.log.
 """
+import sys, os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from backend.database.connection import SessionLocal
-from backend.database.queries.users import list_all_users, get_user_by_username
+from backend.database.queries.users import get_user_by_username
 from backend.database.queries.groups import list_members
-from backend.database.queries.messages import get_user_messages, get_group_messages
-from backend.auth.models import Group, GroupMember, User
+from backend.database.queries.messages import get_chat_history
+from backend.auth.models import Group, GroupMember, User, Message
 from backend.utils.logger_config import database_logger as dblog
 
 db = SessionLocal()
 
 
 # ======================================================
-# 1 - Listar todos os usuários
+# 1️⃣  Listar todos os usuários
 # ======================================================
 def listar_usuarios():
     print("\n=== 👥 Usuários cadastrados ===")
@@ -35,7 +37,7 @@ def listar_usuarios():
 
 
 # ======================================================
-# 2 - Buscar usuário (todas as informações)
+# 2️⃣  Buscar usuário (todas as informações)
 # ======================================================
 def buscar_usuario():
     username = input("🔍 Nome do usuário: ").strip()
@@ -51,7 +53,6 @@ def buscar_usuario():
     print(f"Chave pública armazenada: {'✅ Sim' if user.public_key else '❌ Não'}")
     print(f"Data de criação: {user.created_at}")
 
-    # Exibir grupos pertencentes
     memberships = db.query(GroupMember).filter(GroupMember.user_id == user.id).all()
     if memberships:
         print("\n👥 Grupos que participa:")
@@ -64,7 +65,7 @@ def buscar_usuario():
 
 
 # ======================================================
-# 3 - Listar todos os grupos
+# 3️⃣  Listar todos os grupos
 # ======================================================
 def listar_grupos():
     print("\n=== 🧱 Grupos cadastrados ===")
@@ -78,7 +79,7 @@ def listar_grupos():
 
 
 # ======================================================
-# 4 - Buscar grupo (informações + membros)
+# 4️⃣  Buscar grupo (informações + membros)
 # ======================================================
 def buscar_grupo():
     nome = input("🔍 Nome do grupo: ").strip()
@@ -89,6 +90,7 @@ def buscar_grupo():
 
     print(f"\n=== 📋 Detalhes do Grupo '{grupo.name}' ===")
     print(f"ID: {grupo.id}")
+    print(f"Administrador ID: {grupo.admin_id}")
     print(f"Criado em: {grupo.created_at}")
 
     membros = list_members(db, grupo.name)
@@ -96,14 +98,13 @@ def buscar_grupo():
         print("⚠️ Nenhum membro encontrado.")
     else:
         print("\n👥 Membros do grupo:")
-        for m in membros:
-            print(f"- {m.user.username}")
-
+        for nome_membro in membros:
+            print(f"- {nome_membro}")
     dblog.info(f"[AUDIT] Consulta: buscar_grupo({nome}) executada.")
 
 
 # ======================================================
-# 5 - Listar usuários que pertencem a algum grupo
+# 5️⃣  Listar usuários que pertencem a algum grupo
 # ======================================================
 def usuarios_em_grupos():
     print("\n=== 👥 Usuários com participação em grupos ===")
@@ -117,62 +118,49 @@ def usuarios_em_grupos():
 
 
 # ======================================================
-# 6 - Ver mensagens de usuário (comunicação em pares)
+# 6️⃣  Ver mensagens entre dois usuários (pares)
 # ======================================================
 def mensagens_pares():
-    username = input("💬 Nome do usuário: ").strip()
-    messages = get_user_messages(db, username)
-    sent = messages.get("sent", [])
-    received = messages.get("received", [])
+    user1 = input("👤 Primeiro usuário: ").strip()
+    user2 = input("👤 Segundo usuário: ").strip()
 
-    if not sent and not received:
-        print("⚠️ Nenhuma mensagem privada encontrada.")
+    messages = get_chat_history(db, user1, user2)
+    if not messages:
+        print("⚠️ Nenhuma mensagem privada entre esses usuários.")
         return
 
-    print("\n=== ✉️ Mensagens Enviadas ===")
-    for m in sent:
-        if m.receiver:
-            print(f"→ Para: {m.receiver.username:<15} | {m.timestamp} | Cifrada: {m.content_encrypted[:50]}...")
-
-    print("\n=== 📩 Mensagens Recebidas ===")
-    for m in received:
-        if m.sender:
-            print(f"← De: {m.sender.username:<15} | {m.timestamp} | Cifrada: {m.content_encrypted[:50]}...")
-    dblog.info(f"[AUDIT] Consulta: mensagens_pares({username}) executada.")
+    print(f"\n=== 💬 Histórico entre {user1} e {user2} ===")
+    for m in messages:
+        remetente = db.query(User).get(m.sender_id).username
+        destinatario = db.query(User).get(m.receiver_id).username if m.receiver_id else "-"
+        print(f"{remetente:<15} → {destinatario:<15} | {m.timestamp} | {m.content_encrypted[:60]}...")
+    dblog.info(f"[AUDIT] Consulta: mensagens_pares({user1}, {user2}) executada.")
 
 
 # ======================================================
-# 7 - Ver mensagens de usuário (grupos)
+# 7️⃣  Ver mensagens de grupo
 # ======================================================
 def mensagens_grupos():
-    username = input("👥 Nome do usuário: ").strip()
-    grupos = (
-        db.query(Group)
-        .join(GroupMember, GroupMember.group_id == Group.id)
-        .join(User, User.id == GroupMember.user_id)
-        .filter(User.username == username)
-        .all()
-    )
-
-    if not grupos:
-        print("⚠️ Esse usuário não pertence a nenhum grupo.")
+    nome_grupo = input("👥 Nome do grupo: ").strip()
+    grupo = db.query(Group).filter(Group.name == nome_grupo).first()
+    if not grupo:
+        print("❌ Grupo não encontrado.")
         return
 
-    print(f"\n=== 💬 Mensagens em grupos de {username} ===")
-    for g in grupos:
-        msgs = get_group_messages(db, g.name)
-        if not msgs:
-            print(f"\n📭 Grupo {g.name}: sem mensagens registradas.")
-            continue
-        print(f"\n📨 Grupo {g.name}:")
-        for m in msgs:
-            remetente = m.sender.username if m.sender else "Desconhecido"
-            print(f"   • {remetente:<15} → {m.timestamp} | {m.content_encrypted[:50]}...")
-    dblog.info(f"[AUDIT] Consulta: mensagens_grupos({username}) executada.")
+    mensagens = db.query(Message).filter(Message.group_id == grupo.id).order_by(Message.timestamp.asc()).all()
+    if not mensagens:
+        print("⚠️ Nenhuma mensagem registrada nesse grupo.")
+        return
+
+    print(f"\n=== 📨 Mensagens no grupo '{grupo.name}' ===")
+    for m in mensagens:
+        remetente = db.query(User).get(m.sender_id).username
+        print(f"• {remetente:<15} | {m.timestamp} | {m.content_encrypted[:60]}...")
+    dblog.info(f"[AUDIT] Consulta: mensagens_grupos({nome_grupo}) executada.")
 
 
 # ======================================================
-# Menu principal (somente leitura)
+# Menu principal
 # ======================================================
 def menu():
     while True:
@@ -182,8 +170,8 @@ def menu():
         print("3️⃣  - Listar todos os grupos")
         print("4️⃣  - Buscar grupo (informações + membros)")
         print("5️⃣  - Listar usuários que pertencem a algum grupo")
-        print("6️⃣  - Ver mensagens de usuário (pares)")
-        print("7️⃣  - Ver mensagens de usuário (grupos)")
+        print("6️⃣  - Ver mensagens entre dois usuários (pares)")
+        print("7️⃣  - Ver mensagens de grupo")
         print("0️⃣  - Sair")
 
         opcao = input("Escolha uma opção: ").strip()

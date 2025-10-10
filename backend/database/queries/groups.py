@@ -1,3 +1,6 @@
+# ==========================================
+# backend/database/queries/groups.py
+# ==========================================
 """
 groups.py
 ---------
@@ -27,7 +30,6 @@ def create_group(db: Session, name: str, admin_username: str):
         dblog.error(f"[GROUP_CREATE_FAIL] Admin {admin_username} não encontrado.")
         return None
 
-    # Evita duplicidade
     if db.query(Group).filter(Group.name == name).first():
         dblog.warning(f"[GROUP_CREATE_DUPLICATE] Grupo '{name}' já existe.")
         return None
@@ -49,7 +51,7 @@ def create_group(db: Session, name: str, admin_username: str):
 # Adição de membro
 # ======================================================
 def add_member(db: Session, group_name: str, username: str):
-    """Adiciona um novo membro ao grupo (somente se ainda não existir)."""
+    """Adiciona um novo membro ao grupo."""
     group = db.query(Group).filter(Group.name == group_name).first()
     user = db.query(User).filter(User.username == username).first()
     if not group or not user:
@@ -68,10 +70,10 @@ def add_member(db: Session, group_name: str, username: str):
 
 
 # ======================================================
-# Remoção de membro
+# Remoção de membro e transferência de admin
 # ======================================================
 def remove_member(db: Session, group_name: str, username: str):
-    """Remove um membro do grupo; transfere administração se necessário."""
+    """Remove um membro do grupo e transfere administração se necessário."""
     group = db.query(Group).filter(Group.name == group_name).first()
     user = db.query(User).filter(User.username == username).first()
     if not group or not user:
@@ -83,7 +85,7 @@ def remove_member(db: Session, group_name: str, username: str):
         dblog.warning(f"[GROUP_REMOVE_NOTFOUND] {username} não pertence a {group_name}.")
         return False
 
-    # Se o usuário for o admin do grupo, transferir a administração
+    # Se o usuário for o admin, tenta promover outro membro
     if group.admin_id == user.id:
         successor = (
             db.query(GroupMember)
@@ -94,7 +96,7 @@ def remove_member(db: Session, group_name: str, username: str):
             group.admin_id = successor.user_id
             dblog.info(f"[GROUP_ADMIN_TRANSFER] Admin de '{group_name}' transferido para user_id={successor.user_id}.")
         else:
-            dblog.warning(f"[GROUP_ADMIN_WARNING] Grupo '{group_name}' sem membros restantes (será deletado).")
+            dblog.warning(f"[GROUP_DELETE_EMPTY] Grupo '{group_name}' ficou sem membros e será excluído.")
             db.delete(group)
             db.commit()
             return True
@@ -124,3 +126,21 @@ def list_members(db: Session, group_name: str):
     usernames = [m[0] for m in members]
     dblog.info(f"[GROUP_LIST] {len(usernames)} membros listados em {group_name}.")
     return usernames
+
+
+# ======================================================
+# Listar todos os grupos
+# ======================================================
+def list_all_groups(db: Session):
+    """Lista todos os grupos cadastrados com nome e admin."""
+    groups = db.query(Group).all()
+    dblog.info(f"[GROUP_LIST_ALL] {len(groups)} grupos encontrados.")
+    return [
+        {
+            "id": g.id,
+            "name": g.name,
+            "admin": db.query(User).get(g.admin_id).username if g.admin_id else None,
+            "created_at": str(g.created_at),
+        }
+        for g in groups
+    ]

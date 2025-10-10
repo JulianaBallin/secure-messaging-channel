@@ -1,3 +1,6 @@
+# ==========================================
+# backend/database/queries/users.py
+# ==========================================
 """
 users.py
 --------
@@ -78,11 +81,12 @@ def set_user_status(db: Session, username: str, online: bool):
 # Listar todos os usuários
 # ======================================================
 def list_all_users(db: Session):
-    """Lista todos os usuários cadastrados."""
+    """Lista todos os usuários cadastrados com status e chaves."""
     users = db.query(User).all()
     dblog.info(f"[USER_LIST] {len(users)} usuários retornados.")
     return [
         {
+            "id": u.id,
             "username": u.username,
             "online": u.is_online,
             "has_key": bool(u.public_key),

@@ -1,6 +1,6 @@
 """
 models.py 
----------
+----------
 
 Modelos de dados do CipherTalk — compatíveis com SQLAlchemy 2.0.
 
@@ -35,7 +35,7 @@ class User(Base):
     is_online: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
-    # Relacionamentos
+    # Relacionamentos com cascata total
     sent_messages: Mapped[list["Message"]] = relationship(
         "Message",
         back_populates="sender",
@@ -51,7 +51,9 @@ class User(Base):
     )
 
     group_memberships: Mapped[list["GroupMember"]] = relationship(
-        "GroupMember", back_populates="user", cascade="all, delete-orphan"
+        "GroupMember",
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:
@@ -70,13 +72,17 @@ class Group(Base):
     admin_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
 
-    # Relacionamentos
+    # Relacionamentos com cascata
     admin: Mapped["User"] = relationship("User")
     members: Mapped[list["GroupMember"]] = relationship(
-        "GroupMember", back_populates="group", cascade="all, delete-orphan"
+        "GroupMember",
+        back_populates="group",
+        cascade="all, delete-orphan",
     )
     messages: Mapped[list["Message"]] = relationship(
-        "Message", back_populates="group", cascade="all, delete-orphan"
+        "Message",
+        back_populates="group",
+        cascade="all, delete-orphan",
     )
 
     def __repr__(self) -> str:
@@ -105,6 +111,7 @@ class GroupMember(Base):
 
     __table_args__ = (
         UniqueConstraint("user_id", "group_id", name="uq_group_members_user_group"),
+        Index("ix_group_members_user_group", "user_id", "group_id"),
     )
 
     def __repr__(self) -> str:
@@ -154,7 +161,7 @@ class Message(Base):
             "(receiver_id IS NULL AND group_id IS NOT NULL)",
             name="ck_message_private_or_group",
         ),
-        Index("ix_messages_sender_ts", "sender_id", "timestamp"),
+        Index("ix_messages_sender_receiver_ts", "sender_id", "receiver_id", "timestamp"),
     )
 
     def __repr__(self) -> str:
