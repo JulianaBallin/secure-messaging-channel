@@ -1,5 +1,5 @@
 """
-logger_config.py 
+logger_config.py
 ----------------
 
 Configuração centralizada e completa de logging para o CipherTalk.
@@ -29,6 +29,7 @@ os.makedirs(LOG_DIR, exist_ok=True)
 # ======================================================
 try:
     import colorlog
+
     COLOR_FORMAT = "%(log_color)s%(asctime)s [%(levelname)s] [%(name)s] %(message)s"
     formatter = colorlog.ColoredFormatter(
         COLOR_FORMAT,
@@ -47,11 +48,19 @@ except ImportError:
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
+
 # ======================================================
 # Função auxiliar
 # ======================================================
 def setup_logger(name: str, filename: str, level=logging.INFO) -> logging.Logger:
-    """Cria e configura um logger rotativo com saída no arquivo e no console."""
+    """
+    Cria e configura um logger rotativo com saída no arquivo e no console.
+
+    Args:
+        name (str): Nome lógico do logger (ex: 'server', 'auth', 'database').
+        filename (str): Nome do arquivo de log.
+        level (int): Nível mínimo de log.
+    """
     log_path = os.path.join(LOG_DIR, filename)
     handler = RotatingFileHandler(
         log_path, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
@@ -60,13 +69,14 @@ def setup_logger(name: str, filename: str, level=logging.INFO) -> logging.Logger
 
     logger = logging.getLogger(name)
     logger.setLevel(level)
+
     if not logger.handlers:
         logger.addHandler(handler)
         console = logging.StreamHandler()
         console.setFormatter(formatter)
         logger.addHandler(console)
-    logger.propagate = False
 
+    logger.propagate = False
     logger.info(f"🔧 Logger '{name}' inicializado (arquivo: {filename}) em {datetime.now()}")
     return logger
 
