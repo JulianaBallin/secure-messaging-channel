@@ -17,6 +17,8 @@ import os
 import ssl
 import datetime
 from base64 import b64encode, b64decode
+from backend.utils.logger_config import messages_logger
+
 
 from backend.crypto.idea_manager import generate_idea_key, encrypt_message, decrypt_message
 from backend.crypto.rsa_manager import encrypt_with_rsa, decrypt_with_rsa
@@ -183,3 +185,11 @@ def read_and_decrypt_messages(username: str):
             print("─" * 40)
         except Exception as e:
             print(f"⚠️ Erro ao ler {file}: {e}")
+
+def safe_json_loads(data: bytes):
+    try:
+        text = data.decode('utf-8')
+        return json.loads(text)
+    except Exception as e:
+        messages_logger.warning('Failed to parse JSON response: %s', e)
+        return None

@@ -25,6 +25,7 @@ from backend.auth.models import User, Message, Group, GroupMember
 from backend.auth.security import hash_password, verify_password
 from backend.auth.auth_jwt import create_access_token, verify_access_token
 from backend.utils.logger_config import server_logger as log
+from backend.utils.logger_config import messages_logger
 
 
 USERS_LOCK = asyncio.Lock()
@@ -186,3 +187,33 @@ async def handle_send_group_message(db: Session, message: dict, online_users: Di
             db.add(msg)
             db.commit()
     log.info(f"[GROUP_SEND] {sender} → grupo {group_name}")
+
+# ======================================================
+# MENSAGENS OFFLINE
+# ======================================================  
+
+def store_offline_message(db_conn, to_user_id, from_user_id, body):
+    try:
+        cur = db_conn.cursor()
+        cur.execute('INSERT INTO offline_messages (to_user, from_user, body, delivered) VALUES (?, ?, ?, 0)', (to_user_id, from_user_id, body))
+        db_conn.commit()
+        return True
+    except Exception as e:
+        messages_logger.exception('Failed to store offline message: %s', e)
+        return False
+
+def retrieve_offline_messages(db_conn, user_id):
+    try:
+        cur = db_conn.cursor()
+        cur.execute('SELECT id, from_user, body FROM offline_messages WHERE to_user=? AND delivered=0', (user_id,))
+        rows = cur.fetchall()
+        msgs = [{'id': r[0], 'from': r[1], 'body': r[2]} for r in rows]
+        ids = [r[0] for r in rows]
+        if ids:
+            cur.executemany('UPDATE offline_messages SET delivered=1 WHERE id=?', [(i,) for i in ids])
+            db_conn.commit()
+        return msgs
+    except Exception as e:
+        messages_logger.exception('Failed to retrieve offline messages: %s', e)
+        return []
+

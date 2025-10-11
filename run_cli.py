@@ -17,6 +17,7 @@ import sys
 from getpass import getpass
 from base64 import b64encode
 from dotenv import load_dotenv
+from backend.utils.logger_config import messages_logger
 
 # Importar módulos internos
 sys.path.append(os.path.dirname(__file__))
@@ -59,17 +60,17 @@ async def perform_login():
         # Processar resposta
         data = json.loads(response.decode().strip())
         if "token" not in data:
-            print("❌ Usuário ou senha inválidos.")
+            messages_logger.info("❌ Usuário ou senha inválidos.")
             return None, None
 
-        print(f"✅ Login bem-sucedido! Bem-vindo(a), {username}.")
+        messages_logger.info(f"✅ Login bem-sucedido! Bem-vindo(a), {username}.")
         return username, data["token"]
 
     except ConnectionRefusedError:
-        print("❌ Servidor indisponível. Verifique se está em execução.")
+        messages_logger.info("❌ Servidor indisponível. Verifique se está em execução.")
         return None, None
     except Exception as e:
-        print(f"⚠️ Erro inesperado no login: {e}")
+        messages_logger.info(f"⚠️ Erro inesperado no login: {e}")
         return None, None
 
 
@@ -104,18 +105,18 @@ async def cadastrar_usuario():
     username = input("👤 Nome de usuário: ").strip()
 
     if not re.match(USERNAME_REGEX, username):
-        print("❌ Nome de usuário inválido. Use apenas letras, números e _.")
+        messages_logger.info("❌ Nome de usuário inválido. Use apenas letras, números e _.")
         return
 
     password = getpass("🔑 Crie uma senha: ")
     confirmar = getpass("🔁 Confirme a senha: ")
 
     if password != confirmar:
-        print("❌ As senhas não coincidem.")
+        messages_logger.info("❌ As senhas não coincidem.")
         return
 
     if not validar_senha(password):
-        print("❌ A senha deve ter pelo menos 8 caracteres, 1 maiúscula, 1 número e 1 caractere especial.")
+        messages_logger.info("❌ A senha deve ter pelo menos 8 caracteres, 1 maiúscula, 1 número e 1 caractere especial.")
         return
 
     # Gera par RSA
@@ -125,7 +126,7 @@ async def cadastrar_usuario():
     private_path = f"keys/{username}_private.pem"
     with open(private_path, "wb") as f:
         f.write(private_key)
-    print(f"🔑 Chave privada salva em: {private_path}")
+    messages_logger.info(f"🔑 Chave privada salva em: {private_path}")
 
     # Envia registro ao servidor
     public_key_b64 = b64encode(public_key).decode()
@@ -158,11 +159,11 @@ async def listar_usuarios(token: str):
 
     response = await reader.readline()
     if not response:
-        print("❌ Falha ao receber a lista de usuários.")
+        messages_logger.info("❌ Falha ao receber a lista de usuários.")
         return
 
     data = json.loads(response.decode().strip())
-    print("\n=== 👥 Usuários cadastrados ===")
+    messages_logger.info("\n=== 👥 Usuários cadastrados ===")
     for u in data["users"]:
         status = "🟢 Online" if u["online"] else "⚫ Offline"
         key_status = "✅ Pública OK" if u["public_key"] else "❌ Sem chave pública"
@@ -177,7 +178,7 @@ async def listar_usuarios(token: str):
 # ======================================================
 async def fazer_login():
     """Login + menu interno pós-autenticação."""
-    print("\n=== 🔐 Login ===")
+    messages_logger.info("\n=== 🔐 Login ===")
     username, token = await perform_login()
     if not token:
         input("\nPressione ENTER para voltar ao menu inicial...")
@@ -188,11 +189,11 @@ async def fazer_login():
 
     while True:
         os.system("clear" if os.name != "nt" else "cls")
-        print(f"=== 💬 CipherTalk - Usuário: {username} ===")
-        print("1️⃣  - Listar usuários")
-        print("2️⃣  - Enviar mensagem segura (E2EE)")
-        print("3️⃣  - Ler mensagens recebidas")
-        print("0️⃣  - Logout")
+        messages_logger.info(f"=== 💬 CipherTalk - Usuário: {username} ===")
+        messages_logger.info("1️⃣  - Listar usuários")
+        messages_logger.info("2️⃣  - Enviar mensagem segura (E2EE)")
+        messages_logger.info("3️⃣  - Ler mensagens recebidas")
+        messages_logger.info("0️⃣  - Logout")
 
         opcao = input("Escolha uma opção: ").strip()
         if opcao == "1":
@@ -208,7 +209,7 @@ async def fazer_login():
             print("👋 Logout efetuado.")
             break
         else:
-            print("❌ Opção inválida.")
+            messages_logger.info("❌ Opção inválida.")
             input("\nPressione ENTER para continuar...")
 
 
@@ -219,10 +220,10 @@ async def menu_principal():
     """Menu inicial do cliente."""
     while True:
         os.system("clear" if os.name != "nt" else "cls")
-        print("=== 🔐 CipherTalk CLI ===")
-        print("1️⃣  - Cadastrar novo usuário")
-        print("2️⃣  - Fazer login")
-        print("0️⃣  - Sair")
+        messages_logger.info("=== 🔐 CipherTalk CLI ===")
+        messages_logger.info("1️⃣  - Cadastrar novo usuário")
+        messages_logger.info("2️⃣  - Fazer login")
+        messages_logger.info("0️⃣  - Sair")
 
         opcao = input("Escolha uma opção: ").strip()
         if opcao == "1":
@@ -231,10 +232,10 @@ async def menu_principal():
         elif opcao == "2":
             await fazer_login()
         elif opcao == "0":
-            print("👋 Encerrando cliente...")
+            messages_logger.info("👋 Encerrando cliente...")
             sys.exit(0)
         else:
-            print("❌ Opção inválida.")
+            messages_logger.info("❌ Opção inválida.")
             input("\nPressione ENTER para continuar...")
 
 
@@ -245,4 +246,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(menu_principal())
     except KeyboardInterrupt:
-        print("\n👋 Cliente encerrado pelo usuário.")
+        messages_logger.info("\n👋 Cliente encerrado pelo usuário.")

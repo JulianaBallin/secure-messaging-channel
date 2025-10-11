@@ -19,6 +19,7 @@ from base64 import b64encode
 from getpass import getpass
 from dotenv import load_dotenv
 
+
 # ----------------------------
 # Garantir import global
 # ----------------------------
@@ -69,8 +70,8 @@ async def register_user_tls():
         print("❌ Nome de usuário inválido. Use apenas letras, números e '_'.")
         return
 
-    password = getpass("🔑 Crie uma senha: ")
-    confirm = getpass("🔁 Confirme a senha: ")
+    password = input("🔑 Crie uma senha: ")
+    confirm = input("🔁 Confirme a senha: ")
 
     if password != confirm:
         print("❌ As senhas não coincidem.")

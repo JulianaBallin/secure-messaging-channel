@@ -19,6 +19,7 @@ import json
 import asyncio
 from getpass import getpass
 from dotenv import load_dotenv
+from backend.utils.logger_config import messages_logger
 
 # ----------------------------
 # Garantir imports globais
@@ -28,10 +29,40 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 # ----------------------------
 # Variáveis de ambiente
 # ----------------------------
+
+
 load_dotenv()
 HOST = os.getenv("SERVER_HOST", "127.0.0.1")
 PORT = int(os.getenv("SERVER_PORT", "8888"))
 
+def verify_rsa_integrity(public_key_pem: str) -> bool:
+    try:
+        from cryptography.hazmat.primitives import serialization
+        serialization.load_pem_public_key(public_key_pem.encode('utf-8'))
+        return True
+    except Exception as e:
+        messages_logger.warning('RSA public key verification failed: %s', e)
+        return False
+
+def verify_jwt_token(token: str) -> bool:
+    try:
+        parts = token.split('.')
+        return len(parts) == 3
+    except Exception as e:
+        messages_logger.warning('JWT basic verification failed: %s', e)
+        return False
+
+def fetch_offline_messages_after_login(session):
+    try:
+        resp = session.get('/messages/offline')
+        if resp and getattr(resp, 'status_code', None) == 200:
+            msgs = resp.json()
+            for m in msgs:
+                messages_logger.info('Offline message from %s: %s', m.get('from'), m.get('body'))
+        else:
+            messages_logger.info('No offline messages or failed to fetch (status: %s)', getattr(resp, 'status_code', None))
+    except Exception as e:
+        messages_logger.exception('Failed to fetch offline messages: %s', e)
 
 # ======================================================
 # 🔐 Função principal de login
