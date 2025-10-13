@@ -1,16 +1,6 @@
 from .idea_manager import IDEAManager
 
-
-def banner():
-    print("=" * 70)
-    print("           SISTEMA IDEA - CHAVE DE SESSÃO AUTOMÁTICA")
-    print("=" * 70)
-    print("Gera chave IDEA aleatória para cada cifração 🔐")
-    print("Modo CBC + Padding PKCS7")
-    print("=" * 70)
-
 def main():
-    banner()
     mgr = IDEAManager()
 
     op = input("\n[C]ifrar ou [D]ecifrar? (c/d)\t").strip().lower()
