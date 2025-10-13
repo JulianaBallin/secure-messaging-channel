@@ -1,180 +1,77 @@
-"""
-idea_manager.py 
-----------------
-
-Gerencia a criptografia simétrica usando o algoritmo IDEA no modo CBC
-com preenchimento PKCS7, aplicável ao sistema CipherTalk.
-
-Recursos:
-- Criptografia híbrida IDEA + RSA (E2EE).
-- Fallback automático em Python puro caso o backend nativo não esteja disponível.
-- Geração segura de chaves e IVs.
-- Registro detalhado de logs (chaves, IV, tamanho e backend).
-- Compatível com múltiplos usuários e execuções simultâneas.
-"""
-
-import base64
-import traceback
-from backend.utils.logger_config import crypto_logger
-
-# ======================================================
-# Tentativa de uso do backend nativo
-# ======================================================
-try:
-    from Cryptodome.Cipher import IDEA
-    from Cryptodome.Random import get_random_bytes
-    from Cryptodome.Util.Padding import pad, unpad
-
-    BACKEND_CRIPTO = "Cryptodome (nativo)"
-    USA_NATIVO = True
-    crypto_logger.info("🔒 Backend de criptografia IDEA nativo detectado (Cryptodome).")
-
-except Exception as e:
-    crypto_logger.warning(f"⚠️ IDEA nativo indisponível ({e}); ativando fallback Python puro.")
-    from backend.crypto.idea_fallback import (
-        generate_idea_key as fallback_generate_idea_key,
-        encrypt_message as fallback_encrypt_message,
-        decrypt_message as fallback_decrypt_message,
-    )
-    BACKEND_CRIPTO = "Fallback (Python puro)"
-    USA_NATIVO = False
+import secrets
+from .idea import IDEA
+from .idea_fallback import validar_chave_hex
 
 
-# ======================================================
-# Constantes
-# ======================================================
-TAMANHO_BLOCO = 8      # IDEA opera em blocos de 64 bits
-TAMANHO_CHAVE = 16     # Chave de 128 bits
-
-
-# ======================================================
-# Geração de chave IDEA
-# ======================================================
-def generate_idea_key() -> bytes:
-    """
-    Gera uma chave IDEA de 128 bits para criptografia simétrica.
-
-    Returns:
-        bytes: Chave aleatória de 16 bytes.
-    """
-    try:
-        if USA_NATIVO:
-            chave = get_random_bytes(TAMANHO_CHAVE)
+class IDEAManager:
+    def __init__(self):
+        self.chave_sessao = None
+        self.idea = None
+    
+    def iniciar_sessao_automatica(self):
+        #Inicia uma nova sessão com chave IDEA gerada automaticamente"
+        self.idea = IDEA()  
+        self.chave_sessao = self.idea.get_chave_sessao()
+        return self.chave_sessao
+    
+    def iniciar_sessao_com_chave(self, chave_hex: str = None):
+        #Inicia sessão com chave específica (para decifração)
+        if chave_hex:
+            self.chave_sessao = validar_chave_hex(chave_hex)
         else:
-            chave = fallback_generate_idea_key()
-
-        crypto_logger.info(f"[IDEA][CHAVE] Chave IDEA gerada com sucesso | backend={BACKEND_CRIPTO}")
-        return chave
-
-    except Exception as e:
-        crypto_logger.error(f"[IDEA][ERRO_CHAVE] Falha ao gerar chave: {e}")
-        crypto_logger.debug(traceback.format_exc())
-        return fallback_generate_idea_key()
-
-
-# ======================================================
-# Criptografia
-# ======================================================
-def encrypt_message(mensagem: str, chave: bytes) -> str:
-    """
-    Criptografa uma mensagem usando IDEA-CBC (com PKCS7).
-
-    Args:
-        mensagem (str): Texto em claro.
-        chave (bytes): Chave IDEA de 128 bits.
-
-    Returns:
-        str: Texto cifrado em Base64 contendo IV + dados.
-    """
-    try:
-        if USA_NATIVO:
-            iv = get_random_bytes(TAMANHO_BLOCO)
-            cifra = IDEA.new(chave, IDEA.MODE_CBC, iv)
-            cifrado = cifra.encrypt(pad(mensagem.encode("utf-8"), TAMANHO_BLOCO))
-            combinado = base64.b64encode(iv + cifrado).decode("utf-8")
-
-            crypto_logger.info(
-                f"[IDEA][CRIPTO] Mensagem cifrada com IV={base64.b64encode(iv)[:10].decode()}... "
-                f"(tamanho={len(cifrado)}B) | backend={BACKEND_CRIPTO}"
-            )
-            return combinado
-
+            self.chave_sessao = self.gerar_chave_aleatoria()
+        
+        self.idea = IDEA(self.chave_sessao)
+        return self.chave_sessao
+    
+    def gerar_chave_aleatoria(self) -> int:
+        return int.from_bytes(secrets.token_bytes(16), 'big')
+    
+    def cifrar_texto(self, texto_plano: str) -> tuple:
+        #Cifra texto e retorna (pacote_cifrado, chave_sessao) no formato: (cifrado_hex:iv_hex, chave_sessao_hex)
+        if not self.idea:
+            self.iniciar_sessao_automatica()
+        
+        pacote_cifrado = self.idea.cifrar_cbc(texto_plano)
+        chave_sessao = self.idea.get_chave_sessao_hex()
+        
+        return pacote_cifrado, chave_sessao
+    
+    def decifrar_texto_com_chave(self, pacote_cifrado: str, chave_sessao_hex: str) -> str:
+        # Decifra texto usando chave de sessão fornecida
+        try:
+            chave_sessao = validar_chave_hex(chave_sessao_hex)
+            self.idea = IDEA(chave_sessao)
+            return self.idea.decifrar_cbc(pacote_cifrado)
+        except Exception as e:
+            raise ValueError(f"Erro na decifração: {e}")
+    
+    def configurar_chave(self, chave_hex=None, usar_padrao=False):
+        """Método legado - mantido para compatibilidade"""
+        if usar_padrao:
+            return self.iniciar_sessao_automatica()
         else:
-            cifrado = fallback_encrypt_message(mensagem, chave)
-            crypto_logger.info("[IDEA][CRIPTO] Fallback Python puro utilizado com sucesso.")
-            return cifrado
-
-    except Exception as e:
-        crypto_logger.error(f"[IDEA][ERRO_CRIPTO] Falha na criptografia: {e}")
-        crypto_logger.debug(traceback.format_exc())
-        return fallback_encrypt_message(mensagem, chave)
-
-
-# ======================================================
-# Descriptografia
-# ======================================================
-def decrypt_message(cifrado_b64: str, chave: bytes) -> str:
-    """
-    Descriptografa uma mensagem cifrada com IDEA-CBC (com PKCS7).
-
-    Args:
-        cifrado_b64 (str): Texto cifrado em Base64 (IV + dados).
-        chave (bytes): Mesma chave usada na criptografia.
-
-    Returns:
-        str: Texto original decifrado.
-    """
-    try:
-        if USA_NATIVO:
-            dados = base64.b64decode(cifrado_b64)
-            iv, cifrado = dados[:TAMANHO_BLOCO], dados[TAMANHO_BLOCO:]
-            cifra = IDEA.new(chave, IDEA.MODE_CBC, iv)
-            texto = unpad(cifra.decrypt(cifrado), TAMANHO_BLOCO).decode("utf-8")
-
-            crypto_logger.info(
-                f"[IDEA][DESCRIPTO] Mensagem decifrada com IV={base64.b64encode(iv)[:10].decode()}... "
-                f"(tamanho={len(cifrado)}B) | backend={BACKEND_CRIPTO}"
-            )
-            return texto
-
-        else:
-            texto = fallback_decrypt_message(cifrado_b64, chave)
-            crypto_logger.info("[IDEA][DESCRIPTO] Descriptografia via fallback executada com sucesso.")
-            return texto
-
-    except Exception as e:
-        crypto_logger.error(f"[IDEA][ERRO_DESCRIPTO] Falha na descriptografia: {e}")
-        crypto_logger.debug(traceback.format_exc())
-        return fallback_decrypt_message(cifrado_b64, chave)
-
-
-# ======================================================
-# Teste de integridade da criptografia
-# ======================================================
-def verify_encryption_cycle() -> bool:
-    """
-    Executa um autoteste para verificar a integridade IDEA (E2EE local).
-
-    Returns:
-        bool: True se o processo de cifra e decifra for íntegro.
-    """
-    try:
-        mensagem_teste = "Teste de integridade IDEA - CipherTalk"
-        chave = generate_idea_key()
-        cifrado = encrypt_message(mensagem_teste, chave)
-        decifrado = decrypt_message(cifrado, chave)
-
-        if decifrado == mensagem_teste:
-            print("✅ Teste IDEA bem-sucedido: criptografia e descriptografia íntegras.")
-            crypto_logger.info("[IDEA][AUTOTESTE] ✅ Sucesso no ciclo de criptografia.")
-            return True
-        else:
-            print("❌ Falha no autoteste IDEA: os textos não coincidem.")
-            crypto_logger.warning("[IDEA][AUTOTESTE] ❌ Falha de integridade detectada.")
-            return False
-
-    except Exception as e:
-        print(f"⚠️ Erro inesperado no autoteste IDEA: {e}")
-        crypto_logger.error(f"[IDEA][AUTOTESTE_ERRO] {e}")
-        crypto_logger.debug(traceback.format_exc())
-        return False
+            return self.iniciar_sessao_com_chave(chave_hex)
+    
+    def cifrar_texto_legado(self, texto_plano):
+        """Método legado - mantido para compatibilidade"""
+        if not self.idea:
+            self.iniciar_sessao_automatica()
+        return self.idea.cifrar_cbc(texto_plano)
+    
+    def decifrar_texto_legado(self, resultado_cifrado):
+        """Método legado - mantido para compatibilidade"""
+        if not self.idea:
+            raise ValueError("Chave não configurada")
+        return self.idea.decifrar_cbc(resultado_cifrado)
+    
+    def get_info_sessao(self):
+        """Retorna informações da sessão atual"""
+        if not self.chave_sessao:
+            return "Sessão não iniciada"
+        
+        return {
+            'chave_sessao_hex': hex(self.chave_sessao),
+            'chave_sessao_bytes': self.chave_sessao.bit_length() // 8,
+            'chave_sessao_decimal': str(self.chave_sessao)
+        }
