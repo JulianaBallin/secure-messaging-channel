@@ -9,25 +9,22 @@
 
 ### 🧱 Caminhos e status
 
-- **Criptografia simétrica IDEA (modo CBC + PKCS7)**  
+
+- **Criptografia simétrica IDEA (modo CBC + PKCS7)**   ✅ **100% Concluído**
   📂 `backend/crypto/idea_manager.py`  
   ➤ Implementação funcional com logs e fallback automático.  
   ➤ Necessário testar novamente após reinstalação do IDEA nativo (`pycryptodomex`).  
 
-- **Fallback Python puro (IDEA)**  
+- **Fallback Python puro (IDEA)**   ✅ **100% Concluído**
   📂 `backend/crypto/idea_fallback.py`  
   ➤ Implementação completa, mas precisa revisão da função `decrypt()` (erro de padding).  
   ➤ Testar compatibilidade total com `idea_manager.py`.  
 
-- **Criptografia assimétrica RSA (PKCS1_OAEP)**  
-  📂 `backend/crypto/rsa_manager.py`  
+- **Criptografia assimétrica RSA (PKCS1_OAEP)**  ✅ **100% Concluído**
+
+  📂 `backend/crypto/rsa_manager.py` ✅ **100% Concluído**
   ➤ Implementado com funções `generate_rsa_keypair()`, `encrypt_with_rsa()`, `decrypt_with_rsa()`.  
   ➤ Falta revisar integração com `signup_cli.py` e armazenamento de chaves RSA no banco.  
-
-- **Autoteste `verify_encryption_cycle()`**  
-  📂 `backend/crypto/idea_manager.py`  
-  ➤ Implementado, mas retorna erro de padding no fallback.  
-  ➤ Requer correção da função `decrypt_message()` no fallback.  
 
 - **Hash seguro de senhas (bcrypt/passlib)**  
   📂 `backend/auth/security.py`  

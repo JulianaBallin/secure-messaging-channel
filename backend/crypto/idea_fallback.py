@@ -17,14 +17,23 @@ def remove_pkcs7(data: bytes) -> bytes:
     return data[:-pad]
 
 def validar_chave_hex(chave_hex: str) -> int:
-    #Valida se a chave hexadecimal representa 16 bytes (<=128 bits)."""
     try:
+        chave_hex = chave_hex.strip().upper()
+        if len(chave_hex) != 32:
+            raise ValueError(f"Chave deve ter 32 caracteres hex, tem {len(chave_hex)}")
+        
+        if not all(c in "0123456789ABCDEF" for c in chave_hex):
+            raise ValueError("Chave contém caracteres hex inválidos")
+        
         chave_int = int(chave_hex, 16)
-    except ValueError:
-        raise ValueError("Chave hexadecimal inválida")
-    if chave_int.bit_length() > 128:
-        raise ValueError("Chave muito longa (esperado 16 bytes)")
-    return chave_int
+        
+        if chave_int.bit_length() > 128:
+            raise ValueError("Chave muito longa")
+            
+        return chave_int
+        
+    except ValueError as e:
+        raise ValueError(f"Chave hexadecimal inválida: {e}")
 
 def formatar_resultado(cifrado_hex: str, iv_hex: str) -> str:
     return f"{cifrado_hex}:{iv_hex}"

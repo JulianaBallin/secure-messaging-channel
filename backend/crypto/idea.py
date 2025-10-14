@@ -16,7 +16,7 @@ class IDEA:
         return int.from_bytes(secrets.token_bytes(16), 'big')
 
     def get_chave_sessao(self) -> int:
-        return self.chave_sessao
+        return format(self.chave_sessao, "032X")
 
     def get_chave_sessao_hex(self) -> str:
         #chave de sessão em hexadecimal
@@ -186,7 +186,7 @@ class IDEA:
         else:
             iv = bytes.fromhex(iv_hex)
         
-        texto_bytes = texto_ascii.encode('ascii')
+        texto_bytes = texto_ascii.encode('utf-8')
         
         texto_com_padding = padding_pkcs7(texto_bytes)
         
@@ -241,7 +241,7 @@ class IDEA:
             # Remove PKCS7 padding
             texto_sem_padding = remove_pkcs7(texto_decifrado_bytes)
                                     
-            return texto_sem_padding.decode('ascii')
+            return texto_sem_padding.decode('utf-8')
             
         except Exception as e:
             raise ValueError(f"Erro na decifração: {e}")
