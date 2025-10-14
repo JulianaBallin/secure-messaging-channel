@@ -1,16 +1,7 @@
-from .idea_manager import IDEAManager
-from .rsa_manager import RSAManager
+from backend.crypto.idea_manager import IDEAManager
+from backend.crypto.rsa_manager import RSAManager
 import os
 
-<<<<<<< Updated upstream
-def main():
-    mgr = IDEAManager()
-
-    op = input("\n[C]ifrar ou [D]ecifrar? (c/d)\t").strip().lower()
-
-    if op == "c":
-        texto = input("Digite o texto plano (ASCII):\t\t")
-=======
 def criar_usuario(nome):
     pasta = f"keys/{nome}"
     if not os.path.exists(pasta):
@@ -84,7 +75,6 @@ def main():
             except ValueError:
                 print("Digite um numero ou '+'")
             continue
->>>>>>> Stashed changes
         
         print(f"\nUsuario: {usuario_atual}")
         print("1. Enviar mensagem")
