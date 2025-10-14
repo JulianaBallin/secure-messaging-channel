@@ -26,9 +26,8 @@
   ➤ Implementado com funções `generate_rsa_keypair()`, `encrypt_with_rsa()`, `decrypt_with_rsa()`.  
   ➤ Falta revisar integração com `signup_cli.py` e armazenamento de chaves RSA no banco.  
 
-- **Hash seguro de senhas (bcrypt/passlib)**  
+- **Hash seguro de senhas (Argon2/passlib)**  ✅ **100% Concluído**
   📂 `backend/auth/security.py`  
-  ➤ Implementado parcialmente — utiliza `passlib` com hash e verificação.  
   ➤ Verificar se o mesmo hash é usado em `handlers.py` e `login_cli.py`.  
 
 - **Logs de segurança (`logs/crypto.log`)**  
