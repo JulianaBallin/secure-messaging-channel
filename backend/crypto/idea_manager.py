@@ -75,3 +75,4 @@ class IDEAManager:
             'chave_sessao_bytes': self.chave_sessao.bit_length() // 8,
             'chave_sessao_decimal': str(self.chave_sessao)
         }
+    

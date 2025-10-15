@@ -28,14 +28,6 @@ venv\Scripts\activate     # no Windows
 pip install -r requirements.txt
 ```
 
-Verifique se o módulo `pycryptodomex` está corretamente instalado:
-
-```bash
-pip show pycryptodomex
-```
-
-Se o IDEA nativo não estiver disponível, o sistema usará automaticamente o fallback em Python puro.
-
 ---
 
 ## 🗄️ 3️⃣ Inicializar o banco de dados
