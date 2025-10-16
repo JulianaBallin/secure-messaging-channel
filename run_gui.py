@@ -1,4 +1,4 @@
-from interface.main_ui import MessagingApp
+from interface.main_uiqqqqqqqqqwer import MessagingApp
 
 if __name__ == "__main__":
     app = MessagingApp()

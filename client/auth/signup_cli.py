@@ -32,7 +32,7 @@ from backend.crypto.rsa_manager import generate_rsa_keypair
 # -----------------------------
 load_dotenv()
 HOST = os.getenv("SERVER_HOST", "127.0.0.1")
-PORT = int(os.getenv("SERVER_PORT", "8888"))
+PORT = int(os.getenv("SERVER_PORT", "8000"))
 
 # Criar pastas necessárias
 os.makedirs("keys", exist_ok=True)
@@ -103,9 +103,7 @@ async def register_user_tls():
     ssl_context.verify_mode = ssl.CERT_NONE  # opcional: não verificar hostname (auto-signed)
 
     try:
-        reader, writer = await asyncio.open_connection(
-            HOST, PORT, ssl=ssl_context
-        )
+        reader, writer = await asyncio.open_connection(HOST, PORT)
     except ssl.SSLError as e:
         print(f"💥 Erro SSL: {e}")
         return
