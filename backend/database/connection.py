@@ -27,7 +27,7 @@ engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args=connect_args, futur
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, future=True)
 Base = declarative_base()
 
-dblog.info(f"🔌 [DB_INIT] Conexão SQLAlchemy inicializada ({DB_PATH}).")
+database_logger.info(f"🔌 [DB_INIT] Conexão SQLAlchemy inicializada ({DB_PATH}).")
 
 
 # ======================================================
@@ -55,12 +55,12 @@ def ensure_database():
 
         # Cria as tabelas, se não existirem
         AuthBase.metadata.create_all(bind=engine)
-        dblog.info("🗄️ [DB_CREATE] Tabelas criadas e verificadas com sucesso.")
+        database_logger.info("🗄️ [DB_CREATE] Tabelas criadas e verificadas com sucesso.")
 
         # Log de verificação de esquema
-        dblog.info("[DB_VERIFY] Esquema do banco de dados validado com sucesso.")
+        database_logger.info("[DB_VERIFY] Esquema do banco de dados validado com sucesso.")
         print("✅ Banco de dados inicializado e verificado com sucesso.")
 
     except Exception as e:
-        dblog.error(f"[DB_INIT_FAIL] Falha ao inicializar o banco: {e}")
+        database_logger.error(f"[DB_INIT_FAIL] Falha ao inicializar o banco: {e}")
         raise e

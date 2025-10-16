@@ -22,7 +22,7 @@ import datetime
 from typing import Dict
 from sqlalchemy.orm import Session
 from backend.auth.models import User, Message, Group, GroupMember
-from backend.auth.security import hash_password, verify_password
+from backend.auth.security import hash_senha as hash_password, verificar_senha as verify_password
 from backend.auth.auth_jwt import create_access_token, verify_access_token
 from backend.utils.logger_config import server_logger as log
 
