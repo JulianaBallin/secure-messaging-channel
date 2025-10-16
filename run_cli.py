@@ -1,6 +1,5 @@
 """
-run_cli.py (final)
-------------------
+run_cli.py 
 
 CipherTalk CLI Unificado
 - Cadastro de usuário com RSA.
@@ -21,11 +20,14 @@ from dotenv import load_dotenv
 # Importar módulos internos
 sys.path.append(os.path.dirname(__file__))
 
-from backend.crypto.rsa_manager import generate_rsa_keypair
+from backend.crypto.rsa_manager import RSAManager
 from backend.messages.cli import send_encrypted_message, read_and_decrypt_messages
 from backend.messages.listener import start_listener
 
-# Login centralizado (substitui client/auth/login_cli.py)
+
+# -----------------------------
+# Login centralizado (TLS)
+# -----------------------------
 async def perform_login():
     """Executa login seguro com o servidor (TLS) e retorna (username, token)."""
     import ssl
@@ -34,7 +36,7 @@ async def perform_login():
         username = input("👤 Nome de usuário: ").strip()
         password = getpass("🔑 Senha: ")
 
-        # Configurar contexto TLS
+        # Contexto TLS
         ssl_context = ssl.create_default_context()
         ssl_context.check_hostname = False
         ssl_context.verify_mode = ssl.CERT_NONE
@@ -73,12 +75,13 @@ async def perform_login():
         return None, None
 
 
-# Carregar variáveis de ambiente
+# -----------------------------
+# Configurações e pastas
+# -----------------------------
 load_dotenv()
 HOST = os.getenv("SERVER_HOST", "127.0.0.1")
 PORT = int(os.getenv("SERVER_PORT", "8888"))
 
-# Diretórios necessários
 os.makedirs("keys", exist_ok=True)
 os.makedirs("logs", exist_ok=True)
 
@@ -118,17 +121,19 @@ async def cadastrar_usuario():
         print("❌ A senha deve ter pelo menos 8 caracteres, 1 maiúscula, 1 número e 1 caractere especial.")
         return
 
-    # Gera par RSA
-    public_key, private_key = generate_rsa_keypair()
+    # ATENÇÃO: seu RSAManager.gerar_par_chaves() retorna (privada_str, publica_str)
+    privada_pem_str, publica_pem_str = RSAManager.gerar_par_chaves()
 
-    # Salva chave privada localmente
+    # Salva a chave privada como texto (matching com o retorno em string)
     private_path = f"keys/{username}_private.pem"
-    with open(private_path, "wb") as f:
-        f.write(private_key)
+    with open(private_path, "w", encoding="utf-8") as f:
+        f.write(privada_pem_str)
     print(f"🔑 Chave privada salva em: {private_path}")
 
-    # Envia registro ao servidor
-    public_key_b64 = b64encode(public_key).decode()
+    # Envia a pública em base64 para o servidor (esperado pelo backend)
+    public_key_b64 = b64encode(publica_pem_str.encode("utf-8")).decode("utf-8")
+
+    # Conexão (sem TLS aqui; mantenha como estava no seu servidor)
     reader, writer = await asyncio.open_connection(HOST, PORT)
     payload = {
         "action": "register",
@@ -140,7 +145,10 @@ async def cadastrar_usuario():
     await writer.drain()
 
     response = await reader.readline()
-    print(response.decode().strip())
+    if response:
+        print(response.decode().strip())
+    else:
+        print("⚠️ Nenhuma resposta recebida do servidor durante o cadastro.")
 
     writer.close()
     await writer.wait_closed()
@@ -163,10 +171,10 @@ async def listar_usuarios(token: str):
 
     data = json.loads(response.decode().strip())
     print("\n=== 👥 Usuários cadastrados ===")
-    for u in data["users"]:
-        status = "🟢 Online" if u["online"] else "⚫ Offline"
-        key_status = "✅ Pública OK" if u["public_key"] else "❌ Sem chave pública"
-        print(f"- {u['username']} | {status} | {key_status}")
+    for u in data.get("users", []):
+        status = "🟢 Online" if u.get("online") else "⚫ Offline"
+        key_status = "✅ Pública OK" if u.get("public_key") else "❌ Sem chave pública"
+        print(f"- {u.get('username','?')} | {status} | {key_status}")
 
     writer.close()
     await writer.wait_closed()
@@ -183,11 +191,11 @@ async def fazer_login():
         input("\nPressione ENTER para voltar ao menu inicial...")
         return
 
-    # Inicia o listener assíncrono para receber mensagens em tempo real
+    # Listener assíncrono para receber mensagens em tempo real
     asyncio.create_task(start_listener(username, token, HOST, PORT))
 
     while True:
-        os.system("clear" if os.name != "nt" else "cls")
+        os.system("cls" if os.name == "nt" else "clear")
         print(f"=== 💬 CipherTalk - Usuário: {username} ===")
         print("1️⃣  - Listar usuários")
         print("2️⃣  - Enviar mensagem segura (E2EE)")
@@ -199,9 +207,11 @@ async def fazer_login():
             await listar_usuarios(token)
             input("\nPressione ENTER para continuar...")
         elif opcao == "2":
+            # Mantém a função do módulo backend.messages.cli
             await send_encrypted_message(username, token, HOST, PORT)
             input("\nPressione ENTER para continuar...")
         elif opcao == "3":
+            # Lê do armazenamento local (como seu fluxo original)
             read_and_decrypt_messages(username)
             input("\nPressione ENTER para continuar...")
         elif opcao == "0":
@@ -218,7 +228,7 @@ async def fazer_login():
 async def menu_principal():
     """Menu inicial do cliente."""
     while True:
-        os.system("clear" if os.name != "nt" else "cls")
+        os.system("cls" if os.name == "nt" else "clear")
         print("=== 🔐 CipherTalk CLI ===")
         print("1️⃣  - Cadastrar novo usuário")
         print("2️⃣  - Fazer login")
@@ -239,7 +249,7 @@ async def menu_principal():
 
 
 # ======================================================
-# ▶Execução direta
+# ▶ Execução direta
 # ======================================================
 if __name__ == "__main__":
     try:

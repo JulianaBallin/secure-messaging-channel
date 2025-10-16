@@ -1,78 +1,64 @@
-import secrets
-from .idea import IDEA
-from .idea_fallback import validar_chave_hex
-
+from backend.crypto.idea import IDEA
+from backend.crypto.rsa_manager import RSAManager
+from backend.utils.crypto_logger import crypto_logger
 
 class IDEAManager:
     def __init__(self):
-        self.chave_sessao = None
-        self.idea = None
+        self.idea = IDEA()
     
-    def iniciar_sessao_automatica(self):
-        #Inicia uma nova sessão com chave IDEA gerada automaticamente"
-        self.idea = IDEA()  
-        self.chave_sessao = self.idea.get_chave_sessao()
-        return self.chave_sessao
-    
-    def iniciar_sessao_com_chave(self, chave_hex: str = None):
-        #Inicia sessão com chave específica (para decifração)
-        if chave_hex:
-            self.chave_sessao = validar_chave_hex(chave_hex)
-        else:
-            self.chave_sessao = self.gerar_chave_aleatoria()
+    def cifrar_para_chat(self, texto_plano: str, remetente: str, destinatario: str, chave_publica_destinatario_pem: str):
+        """Cifra uma mensagem para o chat usando IDEA + RSA"""
         
-        self.idea = IDEA(self.chave_sessao)
-        return self.chave_sessao
-    
-    def gerar_chave_aleatoria(self) -> int:
-        return int.from_bytes(secrets.token_bytes(16), 'big')
-    
-    def cifrar_texto(self, texto_plano: str) -> tuple:
-        #Cifra texto e retorna (pacote_cifrado, chave_sessao) no formato: (cifrado_hex:iv_hex, chave_sessao_hex)
-        if not self.idea:
-            self.iniciar_sessao_automatica()
+        # LOG: Início do processo de envio
+        crypto_logger.logger.info("=== INICIO PROCESSO DE ENVIO ===")
+        crypto_logger.logger.info(f"Remetente: {remetente}")
+        crypto_logger.logger.info(f"Destinatario: {destinatario}")
+        crypto_logger.logger.info(f"Mensagem Original: {texto_plano}")
         
-        pacote_cifrado = self.idea.cifrar_cbc(texto_plano)
-        chave_sessao = self.idea.get_chave_sessao_hex()
+        # A chave de sessão já foi gerada automaticamente no __init__ do IDEA
+        chave_sessao_hex = self.idea.get_chave_sessao_hex()
+        crypto_logger.logger.info(f"Chave de Sessao IDEA: {chave_sessao_hex}")
         
-        return pacote_cifrado, chave_sessao
-    
-    def decifrar_texto_com_chave(self, pacote_cifrado: str, chave_sessao_hex: str) -> str:
-        # Decifra texto usando chave de sessão fornecida
-        try:
-            chave_sessao = validar_chave_hex(chave_sessao_hex)
-            self.idea = IDEA(chave_sessao)
-            return self.idea.decifrar_cbc(pacote_cifrado)
-        except Exception as e:
-            raise ValueError(f"Erro na decifração: {e}")
-    
-    def configurar_chave(self, chave_hex=None, usar_padrao=False):
-        """Método legado - mantido para compatibilidade"""
-        if usar_padrao:
-            return self.iniciar_sessao_automatica()
-        else:
-            return self.iniciar_sessao_com_chave(chave_hex)
-    
-    def cifrar_texto_legado(self, texto_plano):
-        """Método legado - mantido para compatibilidade"""
-        if not self.idea:
-            self.iniciar_sessao_automatica()
-        return self.idea.cifrar_cbc(texto_plano)
-    
-    def decifrar_texto_legado(self, resultado_cifrado):
-        """Método legado - mantido para compatibilidade"""
-        if not self.idea:
-            raise ValueError("Chave não configurada")
-        return self.idea.decifrar_cbc(resultado_cifrado)
-    
-    def get_info_sessao(self):
-        """Retorna informações da sessão atual"""
-        if not self.chave_sessao:
-            return "Sessão não iniciada"
+        # Cifrar a mensagem com IDEA
+        resultado = self.idea.cifrar_cbc(texto_plano)
+        crypto_logger.logger.info(f"Mensagem Criptografada (IDEA-CBC): {resultado}")
         
-        return {
-            'chave_sessao_hex': hex(self.chave_sessao),
-            'chave_sessao_bytes': self.chave_sessao.bit_length() // 8,
-            'chave_sessao_decimal': str(self.chave_sessao)
-        }
+        # Converter chave de sessão para bytes
+        chave_sessao_bytes = bytes.fromhex(chave_sessao_hex)
+        
+        # Cifrar a chave de sessão com RSA
+        chave_sessao_cripto_b64 = RSAManager.cifrar_chave_sessao(chave_sessao_bytes, chave_publica_destinatario_pem)
+        crypto_logger.logger.info(f"Chave de Sessao Criptografada (RSA): {chave_sessao_cripto_b64[:50]}...")
+        
+        crypto_logger.logger.info("=== FIM PROCESSO DE ENVIO ===")
+        
+        return resultado, chave_sessao_cripto_b64
     
+    def decifrar_do_chat(self, packet: str, cek_b64: str, destinatario: str, chave_privada_pem: str):
+        #Decifra uma mensagem do chat usando IDEA + RSA
+        
+        crypto_logger.logger.info("=== INICIO PROCESSO DE RECEBIMENTO ===")
+        crypto_logger.logger.info(f"Destinatario: {destinatario}")
+        crypto_logger.logger.info(f"Mensagem Criptografada Recebida: {packet}")
+        crypto_logger.logger.info(f"Chave de Sessao Criptografada Recebida: {cek_b64[:50]}...")
+        
+        # Decifrar a chave de sessão com RSA
+        chave_sessao_bytes = RSAManager.decifrar_chave_sessao(cek_b64, chave_privada_pem)
+        chave_sessao_hex = chave_sessao_bytes.hex().upper()
+        crypto_logger.logger.info(f"Chave de Sessao Decifrada (RSA): {chave_sessao_hex}")
+        
+        # Configurar IDEA com a chave de sessão decifrada
+        chave_sessao_int = int.from_bytes(chave_sessao_bytes, 'big')
+        self.idea = IDEA(chave_sessao_int)
+        
+        # Decifrar a mensagem com IDEA
+        texto_decifrado = self.idea.decifrar_cbc(packet)
+        crypto_logger.logger.info(f"Mensagem Decifrada: {texto_decifrado}")
+        
+        crypto_logger.logger.info("=== FIM PROCESSO DE RECEBIMENTO ===")
+        
+        return texto_decifrado
+    
+    def get_chave_sessao_hex(self):
+        #Retorna a chave de sessão atual em hexadecimal
+        return self.idea.get_chave_sessao_hex()

@@ -10,7 +10,7 @@ Inclui logging detalhado das operações de conexão, verificação e inicializa
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
-from backend.utils.logger_config import database_logger as dblog
+from backend.utils.logger_config import database_logger
 
 # ======================================================
 # Caminho fixo e seguro para o banco
