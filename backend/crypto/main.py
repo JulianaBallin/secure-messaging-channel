@@ -1,6 +1,8 @@
 from backend.crypto.idea_manager import IDEAManager
 from backend.crypto.rsa_manager import RSAManager
 import os
+from backend.utils.crypto_logger import crypto_logger
+
 
 def criar_usuario(nome):
     pasta = f"keys/{nome}"
@@ -17,6 +19,9 @@ def criar_usuario(nome):
             f.write(privada_pem)
         with open(publica_path, 'w') as f:
             f.write(publica_pem)
+        
+        # LOG: Usuário criado
+        crypto_logger.log_usuario_criado(nome, publica_pem, privada_pem)
         return True
     return False
 
@@ -70,6 +75,12 @@ def main():
                 if 0 <= idx < len(usuarios):
                     usuario_atual = usuarios[idx]
                     print(f"Usuario: {usuario_atual}")
+                    
+                    # LOG: Usuário selecionado
+                    crypto_logger.logger.info("=== USUARIO SELECIONADO ===")
+                    crypto_logger.logger.info(f"Usuario atual: {usuario_atual}")
+                    crypto_logger.logger.info("=" * 50)
+                    
                 else:
                     print("Escolha invalida")
             except ValueError:
@@ -104,21 +115,44 @@ def main():
                     mensagem = input(f"Mensagem para {destinatario}: ").strip()
                     
                     if mensagem:
-                        chave_publica = RSAManager.carregar_chave_publica(f"keys/{destinatario}/publica.pem")
+                        # LOG: Início do processo de envio
+                        crypto_logger.logger.info("=== INICIANDO PROCESSO DE ENVIO ===")
+                        crypto_logger.logger.info(f"Remetente: {usuario_atual}")
+                        crypto_logger.logger.info(f"Destinatario: {destinatario}")
+                        crypto_logger.logger.info(f"Mensagem a ser enviada: '{mensagem}'")
+                        
+                        # Carregar chave pública do destinatário
+                        chave_publica_path = f"keys/{destinatario}/publica.pem"
+                        crypto_logger.logger.info(f"Chave publica carregada de: {chave_publica_path}")
+                        chave_publica = RSAManager.carregar_chave_publica(chave_publica_path)
+                        
                         mgr = IDEAManager()
-                        mensagem_cripto, chave_sessao_cripto = mgr.cifrar_para_chat(mensagem, chave_publica)
+                        
+                        # Cifrar a mensagem
+                        mensagem_cripto, chave_sessao_cripto = mgr.cifrar_para_chat(
+                            mensagem, usuario_atual, destinatario, chave_publica
+                        )
                         
                         print(f"\nPara {destinatario}:")
                         print(f"Mensagem criptografada: {mensagem_cripto}")
                         print(f"Chave de sessao criptografada: {chave_sessao_cripto}")
+                        
+                        # LOG: Resumo final para o usuário
+                        crypto_logger.logger.info("=== RESUMO FINAL PARA USUARIO ===")
+                        crypto_logger.logger.info(f"Mensagem criptografada (IDEA-CBC): {mensagem_cripto}")
+                        crypto_logger.logger.info(f"Chave de sessao criptografada (RSA): {chave_sessao_cripto}")
+                        crypto_logger.logger.info("=== PROCESSO DE ENVIO CONCLUIDO ===")
+                        
                     else:
                         print("Mensagem vazia")
+                        crypto_logger.logger.warning("Tentativa de envio de mensagem vazia")
                 else:
                     print("Escolha invalida")
                     
             except ValueError:
                 print("Numero invalido")
             except Exception as e:
+                crypto_logger.logger.error(f"ERRO no envio: {e}")
                 print(f"Erro: {e}")
         
         elif op == "2":
@@ -126,16 +160,43 @@ def main():
             chave_sessao_cripto = input("Chave de sessao criptografada: ").strip()
             
             try:
-                chave_privada = RSAManager.carregar_chave_privada(f"keys/{usuario_atual}/privada.pem")
+                # LOG: Início do processo de recebimento
+                crypto_logger.logger.info("=== INICIANDO PROCESSO DE RECEBIMENTO ===")
+                crypto_logger.logger.info(f"Destinatario: {usuario_atual}")
+                crypto_logger.logger.info(f"Mensagem criptografada recebida: {mensagem_cripto}")
+                crypto_logger.logger.info(f"Chave de sessao criptografada recebida: {chave_sessao_cripto}")
+                
+                # Carregar chave privada do usuário atual
+                chave_privada_path = f"keys/{usuario_atual}/privada.pem"
+                crypto_logger.logger.info(f"Chave privada carregada de: {chave_privada_path}")
+                chave_privada = RSAManager.carregar_chave_privada(chave_privada_path)
+                
                 mgr = IDEAManager()
-                texto = mgr.decifrar_do_chat(mensagem_cripto, chave_sessao_cripto, chave_privada)
+                
+                # Decifrar a mensagem
+                texto = mgr.decifrar_do_chat(
+                    mensagem_cripto, chave_sessao_cripto, usuario_atual, chave_privada
+                )
+                
                 print(f"\nMensagem: {texto}")
                 
+                # LOG: Resumo final para o usuário
+                crypto_logger.logger.info("=== RESUMO FINAL PARA USUARIO ===")
+                crypto_logger.logger.info(f"Mensagem decifrada: '{texto}'")
+                crypto_logger.logger.info("=== PROCESSO DE RECEBIMENTO CONCLUIDO ===")
+                
             except Exception as e:
+                crypto_logger.logger.error(f"ERRO no recebimento: {e}")
                 print(f"Erro: {e}")
         
         elif op == "3":
+            # LOG: Troca de usuário
+            crypto_logger.logger.info("=== TROCA DE USUARIO ===")
+            crypto_logger.logger.info(f"Usuario anterior: {usuario_atual}")
             usuario_atual = None
+            crypto_logger.logger.info("Usuario definido como: None")
+            crypto_logger.logger.info("=" * 50)
+            print("Trocando usuario...")
         
         elif op == "4":
             novo_nome = input("Novo usuario: ").strip()
@@ -144,11 +205,18 @@ def main():
                 print(f"Usuario {novo_nome} criado!")
         
         elif op == "5":
+            # LOG: Saída do sistema
+            crypto_logger.logger.info("=== SAIDA DO SISTEMA ===")
+            crypto_logger.logger.info(f"Usuario final: {usuario_atual}")
+            crypto_logger.logger.info("Sistema encerrado pelo usuario")
+            crypto_logger.logger.info("=" * 50)
+            
             print("Ate logo!")
             break
         
         else:
             print("Opcao invalida")
+            crypto_logger.logger.warning(f"Opcao invalida selecionada: {op}")
 
 if __name__ == "__main__":
     main()
