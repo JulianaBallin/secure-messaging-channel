@@ -1,126 +1,97 @@
 """
-groups.py
----------
-
-Consultas relacionadas a grupos e seus membros.
-
-Inclui:
-- Criação e exclusão de grupos
-- Adição e remoção de membros
-- Transferência automática de administração
-- Listagem de membros
-- Logs de auditoria completos
+groups.py — CRUD para tabela 'groups'
 """
-
-from sqlalchemy.orm import Session
-from backend.auth.models import Group, GroupMember, User
+from datetime import datetime, timezone, timedelta
+from backend.auth.models import Group, User, GroupMember, SessionKey
 from backend.utils.logger_config import database_logger as dblog
+from backend.utils.db_utils import safe_db_operation
+from backend.crypto.idea_manager import IDEAManager
+from backend.crypto.rsa_manager import RSAManager
+
+manaus_tz = timezone(timedelta(hours=-4))
 
 
 # ======================================================
-# Criação de grupo
+# 🆕 CREATE
 # ======================================================
-def create_group(db: Session, name: str, admin_username: str):
-    """Cria um grupo e adiciona o criador como administrador."""
-    admin = db.query(User).filter(User.username == admin_username).first()
+# backend/database/queries/groups.py
+
+@safe_db_operation
+def create_group(db, name: str, admin_username: str):
+    """Cria um novo grupo, adiciona o admin como membro e gera CEK inicial."""
+    admin = db.query(User).filter_by(username=admin_username).first()
     if not admin:
-        dblog.error(f"[GROUP_CREATE_FAIL] Admin {admin_username} não encontrado.")
-        return None
+        raise ValueError("Administrador não encontrado.")
 
-    # Evita duplicidade
-    if db.query(Group).filter(Group.name == name).first():
-        dblog.warning(f"[GROUP_CREATE_DUPLICATE] Grupo '{name}' já existe.")
-        return None
-
+    # 1️⃣ Cria grupo
     group = Group(name=name, admin_id=admin.id)
     db.add(group)
     db.commit()
     db.refresh(group)
+    dblog.info(f"[CREATE_GROUP] {name} (admin={admin_username})")
 
-    member = GroupMember(group_id=group.id, user_id=admin.id)
-    db.add(member)
+    # 2️⃣ Adiciona o admin como membro do grupo
+    admin_member = GroupMember(user_id=admin.id, group_id=group.id)
+    db.add(admin_member)
     db.commit()
+    dblog.info(f"[ADD_ADMIN_MEMBER] {admin_username} adicionado automaticamente ao grupo {name}")
 
-    dblog.info(f"[GROUP_CREATE] Grupo '{name}' criado com admin '{admin_username}'.")
+    # 3️⃣ Gera CEK inicial para o grupo
+    cek = IDEAManager.gerar_chave()
+
+    # Criptografa a CEK com a chave pública do admin
+    public_key_admin = (
+        admin.public_key.decode() if isinstance(admin.public_key, bytes) else admin.public_key
+    )
+    cek_cifrada_b64 = RSAManager.cifrar_chave_sessao(cek, public_key_admin)
+
+    sess = SessionKey(
+        entity_type="group",
+        entity_id=group.id,
+        cek_encrypted=cek_cifrada_b64, 
+        created_at=datetime.now(manaus_tz),
+    )
+    db.add(sess)
+    db.commit()
+    dblog.info(f"[GROUP_CEK_INIT] CEK inicial criada e armazenada para grupo {name}")
+
     return group
 
 
 # ======================================================
-# Adição de membro
+# 🔎 READ
 # ======================================================
-def add_member(db: Session, group_name: str, username: str):
-    """Adiciona um novo membro ao grupo (somente se ainda não existir)."""
-    group = db.query(Group).filter(Group.name == group_name).first()
-    user = db.query(User).filter(User.username == username).first()
-    if not group or not user:
-        dblog.error(f"[GROUP_ADD_FAIL] Grupo ou usuário inválido ({group_name}, {username})")
-        return None
+def get_group_by_name(db, name: str):
+    return db.query(Group).filter_by(name=name).first()
 
-    if db.query(GroupMember).filter_by(group_id=group.id, user_id=user.id).first():
-        dblog.warning(f"[GROUP_ADD_DUPLICATE] {username} já é membro de {group_name}.")
-        return None
 
-    gm = GroupMember(group_id=group.id, user_id=user.id)
-    db.add(gm)
-    db.commit()
-    dblog.info(f"[GROUP_ADD] {username} adicionado a {group_name}.")
-    return gm
+def list_groups(db):
+    return db.query(Group).all()
 
 
 # ======================================================
-# Remoção de membro
+# ✏️ UPDATE
 # ======================================================
-def remove_member(db: Session, group_name: str, username: str):
-    """Remove um membro do grupo; transfere administração se necessário."""
-    group = db.query(Group).filter(Group.name == group_name).first()
-    user = db.query(User).filter(User.username == username).first()
-    if not group or not user:
-        dblog.error(f"[GROUP_REMOVE_FAIL] Grupo ou usuário inválido ({group_name}, {username})")
-        return False
-
-    membership = db.query(GroupMember).filter_by(group_id=group.id, user_id=user.id).first()
-    if not membership:
-        dblog.warning(f"[GROUP_REMOVE_NOTFOUND] {username} não pertence a {group_name}.")
-        return False
-
-    # Se o usuário for o admin do grupo, transferir a administração
-    if group.admin_id == user.id:
-        successor = (
-            db.query(GroupMember)
-            .filter(GroupMember.group_id == group.id, GroupMember.user_id != user.id)
-            .first()
-        )
-        if successor:
-            group.admin_id = successor.user_id
-            dblog.info(f"[GROUP_ADMIN_TRANSFER] Admin de '{group_name}' transferido para user_id={successor.user_id}.")
-        else:
-            dblog.warning(f"[GROUP_ADMIN_WARNING] Grupo '{group_name}' sem membros restantes (será deletado).")
-            db.delete(group)
-            db.commit()
-            return True
-
-    db.delete(membership)
-    db.commit()
-    dblog.info(f"[GROUP_REMOVE] {username} removido de {group_name}.")
-    return True
-
-
-# ======================================================
-# Listagem de membros
-# ======================================================
-def list_members(db: Session, group_name: str):
-    """Lista todos os membros de um grupo (retorna usernames)."""
-    group = db.query(Group).filter(Group.name == group_name).first()
+@safe_db_operation
+def rename_group(db, old_name: str, new_name: str):
+    group = get_group_by_name(db, old_name)
     if not group:
-        dblog.error(f"[GROUP_LIST_FAIL] Grupo não encontrado: {group_name}")
-        return []
+        raise ValueError("Grupo não encontrado.")
+    group.name = new_name
+    db.commit()
+    dblog.info(f"[UPDATE_GROUP] {old_name} → {new_name}")
+    return group
 
-    members = (
-        db.query(User.username)
-        .join(GroupMember, GroupMember.user_id == User.id)
-        .filter(GroupMember.group_id == group.id)
-        .all()
-    )
-    usernames = [m[0] for m in members]
-    dblog.info(f"[GROUP_LIST] {len(usernames)} membros listados em {group_name}.")
-    return usernames
+
+# ======================================================
+# 🗑️ DELETE
+# ======================================================
+@safe_db_operation
+def delete_group(db, name: str):
+    group = get_group_by_name(db, name)
+    if not group:
+        raise ValueError("Grupo não encontrado.")
+    db.delete(group)
+    db.commit()
+    dblog.info(f"[DELETE_GROUP] {name}")
+    return True

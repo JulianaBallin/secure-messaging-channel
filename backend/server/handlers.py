@@ -22,12 +22,16 @@ import datetime
 from typing import Dict
 from sqlalchemy.orm import Session
 from backend.auth.models import User, Message, Group, GroupMember
-from backend.auth.security import hash_password, verify_password
 from backend.auth.auth_jwt import create_access_token, verify_access_token
 from backend.utils.logger_config import server_logger as log
-from backend.utils.logger_config import messages_logger
+from backend.auth.security import hash_senha as hash_password, verificar_senha as verify_password
+from backend.crypto.rsa_manager import RSAManager
 
 
+
+# ======================================================
+# LOCK GLOBAL DE USUÁRIOS
+# ======================================================
 USERS_LOCK = asyncio.Lock()
 
 
@@ -35,185 +39,246 @@ USERS_LOCK = asyncio.Lock()
 # CADASTRO
 # ======================================================
 async def handle_register(db: Session, writer, creds: dict) -> None:
-    """Cadastra novo usuário com chave RSA pública."""
+    """Cadastra novo usuário, gera par de chaves RSA e armazena senha com hash Argon2id."""
     username = creds.get("username")
     password = creds.get("password")
-    public_key_b64 = creds.get("public_key")
 
-    if not username or not password or not public_key_b64:
+    if not username or not password:
         writer.write("❌ Dados incompletos.\n".encode())
         await writer.drain()
+        log.warning(f"[REGISTER_FAIL] Campos ausentes para cadastro de {username}")
         return
 
     async with USERS_LOCK:
+        # Verifica se o usuário já existe
         if db.query(User).filter(User.username == username).first():
             writer.write("❌ Usuário já existe.\n".encode())
             await writer.drain()
+            log.warning(f"[REGISTER_DUPLICATE] Tentativa duplicada de {username}")
             return
 
-        new_user = User(username=username, password_hash=hash_password(password), public_key=public_key_b64.encode())
+        # Gera par de chaves RSA (privada e pública)
+        private_key_pem, public_key_pem = RSAManager.gerar_par_chaves()
+
+        # Hash da senha com Argon2
+        hashed_password = hash_password(password)
+
+        # Cria e persiste o novo usuário
+        new_user = User(
+            username=username,
+            password_hash=hashed_password,
+            public_key=public_key_pem.encode(),  # armazenar em bytes
+        )
         db.add(new_user)
         db.commit()
 
-    writer.write("✅ Usuário criado!\n".encode())
+    # Retorna chave privada ao cliente (pode ser exibida uma única vez)
+    writer.write(
+        json.dumps(
+            {
+                "status": "success",
+                "message": f"Usuário '{username}' criado com sucesso.",
+                "private_key": private_key_pem,
+            }
+        ).encode()
+        + b"\n"
+    )
     await writer.drain()
-    log.info(f"[REGISTER_OK] {username} cadastrado.")
+    log.info(f"[REGISTER_OK] Novo usuário registrado: {username}")
 
 
 # ======================================================
-# LOGIN + MENSAGENS OFFLINE
+# LOGIN + ENTREGA DE MENSAGENS OFFLINE
 # ======================================================
 async def handle_login(db: Session, writer, creds: dict, online_users: Dict[str, asyncio.StreamWriter]):
-    """Autentica usuário e entrega mensagens pendentes."""
+    """Autentica o usuário e entrega mensagens pendentes do banco."""
     username = creds.get("username")
     password = creds.get("password")
+
+    if not username or not password:
+        writer.write("❌ Credenciais incompletas.\n".encode())
+        await writer.drain()
+        log.warning("[LOGIN_FAIL] Campos ausentes no login.")
+        return None, None
 
     user = db.query(User).filter(User.username == username).first()
     if not user or not verify_password(password, user.password_hash):
         writer.write("AUTH_FAILED\n".encode())
         await writer.drain()
+        log.warning(f"[LOGIN_FAIL] Usuário inexistente ou senha incorreta: {username}")
         return None, None
 
     token = create_access_token(username)
     async with USERS_LOCK:
         online_users[username] = writer
+
     writer.write((json.dumps({"token": token}) + "\n").encode())
     await writer.drain()
+    log.info(f"[LOGIN_OK] {username} autenticado e online.")
 
+    # --- Mensagens offline pendentes ---
     offline_msgs = (
         db.query(Message)
         .join(User, User.id == Message.receiver_id)
         .filter(User.username == username)
         .all()
     )
+    if not offline_msgs:
+        return username, token
+
+    log.info(f"[OFFLINE_DELIVERY] {len(offline_msgs)} mensagens pendentes para {username}")
     for msg in offline_msgs:
-        payload = {
-            "from": db.query(User).get(msg.sender_id).username,
-            "content_encrypted": msg.content_encrypted,
-            "key_encrypted": msg.key_encrypted,
-            "timestamp": str(msg.timestamp),
-        }
-        writer.write((json.dumps(payload) + "\n").encode())
-        await writer.drain()
-        db.delete(msg)
+        try:
+            payload = {
+                "from": db.query(User).get(msg.sender_id).username,
+                "content_encrypted": msg.content_encrypted,
+                "key_encrypted": msg.key_encrypted,
+                "timestamp": str(msg.timestamp),
+            }
+            writer.write((json.dumps(payload) + "\n").encode())
+            await writer.drain()
+            db.delete(msg)
+        except Exception as e:
+            log.error(f"[OFFLINE_FAIL] Erro ao entregar mensagem offline: {e}")
     db.commit()
+
+    log.info(f"[OFFLINE_OK] Todas as mensagens pendentes entregues para {username}")
     return username, token
 
 
 # ======================================================
-# LISTAGEM
+# LISTAGEM DE USUÁRIOS
 # ======================================================
 async def handle_list_users(db: Session, writer, message: dict, online_users: Dict[str, asyncio.StreamWriter]):
-    token = message.get("token")
-    requester = verify_access_token(token)
-    users = db.query(User).all()
-    users_info = [
-        {"username": u.username, "online": u.username in online_users, "public_key": u.public_key.decode() if u.public_key else None}
-        for u in users
-    ]
-    writer.write((json.dumps({"users": users_info}) + "\n").encode())
-    await writer.drain()
-    log.info(f"[LIST_OK] Lista enviada para {requester}")
+    """Retorna a lista de todos os usuários e seus status."""
+    try:
+        token = message.get("token")
+        requester = verify_access_token(token)
+        users = db.query(User).all()
+
+        users_info = [
+            {
+                "username": u.username,
+                "online": u.username in online_users,
+                "public_key": u.public_key.decode() if u.public_key else None,
+            }
+            for u in users
+        ]
+        writer.write((json.dumps({"users": users_info}) + "\n").encode())
+        await writer.drain()
+        log.info(f"[LIST_OK] {requester} requisitou a lista de usuários ({len(users)} registros).")
+    except Exception as e:
+        log.error(f"[LIST_FAIL] Erro ao listar usuários: {e}")
+        writer.write("❌ Falha ao obter lista de usuários.\n".encode())
+        await writer.drain()
 
 
 # ======================================================
-# ENVIO PRIVADO
+# ENVIO DE MENSAGEM PRIVADA
 # ======================================================
 async def handle_send_message(db: Session, message: dict, online_users: Dict[str, asyncio.StreamWriter]):
-    token = message.get("token")
-    sender = verify_access_token(token)
-    receiver = message.get("to")
-    encrypted_content = message.get("content_encrypted")
-    encrypted_key = message.get("key_encrypted")
+    """Envia ou armazena uma mensagem privada (E2EE)."""
+    try:
+        token = message.get("token")
+        sender = verify_access_token(token)
+        receiver = message.get("to")
+        encrypted_content = message.get("content_encrypted")
+        encrypted_key = message.get("key_encrypted")
 
-    sender_user = db.query(User).filter(User.username == sender).first()
-    receiver_user = db.query(User).filter(User.username == receiver).first()
-    payload = {
-        "from": sender,
-        "content_encrypted": encrypted_content,
-        "key_encrypted": encrypted_key,
-        "timestamp": datetime.datetime.utcnow().isoformat(),
-    }
+        if not all([sender, receiver, encrypted_content, encrypted_key]):
+            log.warning(f"[SEND_FAIL] Campos ausentes em mensagem de {sender}")
+            return
 
-    async with USERS_LOCK:
-        if receiver in online_users:
-            dest_writer = online_users[receiver]
-            dest_writer.write((json.dumps(payload) + "\n").encode())
-            await dest_writer.drain()
-            log.info(f"[DELIVERED] {sender} → {receiver}")
-        else:
-            msg = Message(sender_id=sender_user.id, receiver_id=receiver_user.id, content_encrypted=encrypted_content, key_encrypted=encrypted_key)
-            db.add(msg)
-            db.commit()
-            log.info(f"[STORED] {receiver} offline.")
+        sender_user = db.query(User).filter(User.username == sender).first()
+        receiver_user = db.query(User).filter(User.username == receiver).first()
+        if not receiver_user:
+            log.error(f"[SEND_FAIL] Destinatário {receiver} não encontrado.")
+            return
 
-
-# ======================================================
-# ENVIO EM GRUPO
-# ======================================================
-async def handle_send_group_message(db: Session, message: dict, online_users: Dict[str, asyncio.StreamWriter]):
-    token = message.get("token")
-    sender = verify_access_token(token)
-    group_name = message.get("group")
-    encrypted_content = message.get("content_encrypted")
-    keys_map = message.get("keys_encrypted", {})
-
-    group = db.query(Group).filter(Group.name == group_name).first()
-    members = (
-        db.query(User.username)
-        .join(GroupMember, GroupMember.user_id == User.id)
-        .filter(GroupMember.group_id == group.id)
-        .all()
-    )
-
-    sender_user = db.query(User).filter(User.username == sender).first()
-    for (username,) in members:
-        if username == sender:
-            continue
         payload = {
             "from": sender,
-            "group": group_name,
             "content_encrypted": encrypted_content,
-            "key_encrypted": keys_map.get(username),
+            "key_encrypted": encrypted_key,
             "timestamp": datetime.datetime.utcnow().isoformat(),
         }
-        if username in online_users:
-            writer = online_users[username]
-            writer.write((json.dumps(payload) + "\n").encode())
-            await writer.drain()
-        else:
-            receiver_user = db.query(User).filter(User.username == username).first()
-            msg = Message(sender_id=sender_user.id, receiver_id=receiver_user.id, group_id=group.id, content_encrypted=encrypted_content, key_encrypted=keys_map.get(username))
-            db.add(msg)
-            db.commit()
-    log.info(f"[GROUP_SEND] {sender} → grupo {group_name}")
+
+        async with USERS_LOCK:
+            if receiver in online_users:
+                dest_writer = online_users[receiver]
+                dest_writer.write((json.dumps(payload) + "\n").encode())
+                await dest_writer.drain()
+                log.info(f"[DELIVERED] {sender} → {receiver}")
+            else:
+                msg = Message(
+                    sender_id=sender_user.id,
+                    receiver_id=receiver_user.id,
+                    content_encrypted=encrypted_content,
+                    key_encrypted=encrypted_key,
+                )
+                db.add(msg)
+                db.commit()
+                log.info(f"[STORED] {receiver} offline. Mensagem armazenada.")
+
+    except Exception as e:
+        log.error(f"[SEND_ERROR] Falha ao enviar mensagem privada: {e}")
+
 
 # ======================================================
-# MENSAGENS OFFLINE
-# ======================================================  
-
-def store_offline_message(db_conn, to_user_id, from_user_id, body):
+# ENVIO DE MENSAGEM EM GRUPO
+# ======================================================
+async def handle_send_group_message(db: Session, message: dict, online_users: Dict[str, asyncio.StreamWriter]):
+    """Envia mensagens criptografadas para todos os membros de um grupo."""
     try:
-        cur = db_conn.cursor()
-        cur.execute('INSERT INTO offline_messages (to_user, from_user, body, delivered) VALUES (?, ?, ?, 0)', (to_user_id, from_user_id, body))
-        db_conn.commit()
-        return True
-    except Exception as e:
-        messages_logger.exception('Failed to store offline message: %s', e)
-        return False
+        token = message.get("token")
+        sender = verify_access_token(token)
+        group_name = message.get("group")
+        encrypted_content = message.get("content_encrypted")
+        keys_map = message.get("keys_encrypted", {})
 
-def retrieve_offline_messages(db_conn, user_id):
-    try:
-        cur = db_conn.cursor()
-        cur.execute('SELECT id, from_user, body FROM offline_messages WHERE to_user=? AND delivered=0', (user_id,))
-        rows = cur.fetchall()
-        msgs = [{'id': r[0], 'from': r[1], 'body': r[2]} for r in rows]
-        ids = [r[0] for r in rows]
-        if ids:
-            cur.executemany('UPDATE offline_messages SET delivered=1 WHERE id=?', [(i,) for i in ids])
-            db_conn.commit()
-        return msgs
-    except Exception as e:
-        messages_logger.exception('Failed to retrieve offline messages: %s', e)
-        return []
+        group = db.query(Group).filter(Group.name == group_name).first()
+        if not group:
+            log.error(f"[GROUP_SEND_FAIL] Grupo '{group_name}' não encontrado.")
+            return
 
+        members = (
+            db.query(User.username)
+            .join(GroupMember, GroupMember.user_id == User.id)
+            .filter(GroupMember.group_id == group.id)
+            .all()
+        )
+
+        sender_user = db.query(User).filter(User.username == sender).first()
+        for (username,) in members:
+            if username == sender:
+                continue
+
+            payload = {
+                "from": sender,
+                "group": group_name,
+                "content_encrypted": encrypted_content,
+                "key_encrypted": keys_map.get(username),
+                "timestamp": datetime.datetime.utcnow().isoformat(),
+            }
+
+            if username in online_users:
+                writer = online_users[username]
+                writer.write((json.dumps(payload) + "\n").encode())
+                await writer.drain()
+                log.info(f"[GROUP_DELIVERED] {sender} → {username} ({group_name})")
+            else:
+                receiver_user = db.query(User).filter(User.username == username).first()
+                msg = Message(
+                    sender_id=sender_user.id,
+                    receiver_id=receiver_user.id,
+                    group_id=group.id,
+                    content_encrypted=encrypted_content,
+                    key_encrypted=keys_map.get(username),
+                )
+                db.add(msg)
+                db.commit()
+                log.info(f"[GROUP_STORE] {username} offline. Mensagem salva (grupo {group_name}).")
+
+        log.info(f"[GROUP_SEND_OK] {sender} enviou mensagem ao grupo {group_name}")
+
+    except Exception as e:
+        log.error(f"[GROUP_SEND_ERROR] Erro ao enviar mensagem em grupo: {e}")

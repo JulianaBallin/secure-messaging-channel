@@ -16,13 +16,10 @@ import json
 import os
 import ssl
 import datetime
-from base64 import b64encode, b64decode
-from backend.utils.logger_config import messages_logger
+from base64 import b64decode
 
-
-from backend.crypto.idea_manager import generate_idea_key, encrypt_message, decrypt_message
-from backend.crypto.rsa_manager import encrypt_with_rsa, decrypt_with_rsa
-
+from backend.crypto.idea_manager import IDEAManager
+from backend.crypto.rsa_manager import RSAManager
 
 # Diretórios obrigatórios
 os.makedirs("messages", exist_ok=True)
@@ -40,12 +37,6 @@ async def send_encrypted_message(username: str, token: str, host: str, port: int
         print("❌ Campos obrigatórios ausentes.")
         return
 
-    # Gerar chave simétrica IDEA
-    idea_key = generate_idea_key()
-
-    # Criptografar mensagem
-    encrypted_message = encrypt_message(message, idea_key)
-
     # Conexão segura
     ssl_context = ssl.create_default_context()
     ssl_context.check_hostname = False
@@ -56,11 +47,13 @@ async def send_encrypted_message(username: str, token: str, host: str, port: int
     # ==============================
     try:
         reader, writer = await asyncio.open_connection(host, port, ssl=ssl_context)
+
+        # restaura sessão para poder consultar usuários
         init_payload = {"action": "resume_session", "token": token}
         writer.write((json.dumps(init_payload) + "\n").encode("utf-8"))
         await writer.drain()
 
-        await asyncio.sleep(0.2)  # aguarda autenticação da sessão
+        await asyncio.sleep(0.2)  # aguarda handshake
 
         list_payload = {"action": "list_users", "token": token}
         writer.write((json.dumps(list_payload) + "\n").encode("utf-8"))
@@ -69,21 +62,23 @@ async def send_encrypted_message(username: str, token: str, host: str, port: int
         data = await reader.readline()
         if not data:
             print("❌ Nenhuma resposta do servidor (list_users).")
+            writer.close()
+            await writer.wait_closed()
             return
 
         response_text = data.decode().strip()
 
-        # Ignorar respostas não-JSON (como "✅ Sessão restaurada...")
+        # o servidor pode enviar uma mensagem informativa antes do JSON
         if not response_text.startswith("{"):
-            print(f"ℹ️ Resposta informativa do servidor: {response_text}")
             data = await reader.readline()
             if not data:
                 print("❌ Falha ao obter lista de usuários após handshake.")
+                writer.close()
+                await writer.wait_closed()
                 return
             response_text = data.decode().strip()
 
         users_info = json.loads(response_text).get("users", [])
-        await asyncio.sleep(0.3)  # 🕓 evita fechamento precoce
         writer.close()
         await writer.wait_closed()
 
@@ -94,24 +89,36 @@ async def send_encrypted_message(username: str, token: str, host: str, port: int
     # ==============================
     # Selecionar destinatário
     # ==============================
-    receiver_data = next((u for u in users_info if u["username"] == receiver), None)
+    receiver_data = next((u for u in users_info if u.get("username") == receiver), None)
     if not receiver_data or not receiver_data.get("public_key"):
         print("❌ Chave pública do destinatário não encontrada.")
         return
 
-    receiver_pub_key = b64decode(receiver_data["public_key"])
+    # No banco/servidor a pública está Base64; convertemos para PEM (texto)
+    receiver_pub_key_pem = b64decode(receiver_data["public_key"]).decode("utf-8")
 
-    # Criptografar chave IDEA com RSA do destinatário
-    encrypted_key = encrypt_with_rsa(receiver_pub_key, idea_key)
+    # ==============================
+    # Criptografar com sua IDEAManager
+    #   - packet: "CIFRADO_HEX:IV_HEX"
+    #   - cek_b64: chave de sessão (16 bytes) cifrada com RSA do destinatário, em Base64
+    # ==============================
+    idea_mgr = IDEAManager()
+    packet, cek_b64 = idea_mgr.cifrar_para_chat(
+        texto_plano=message,
+        chave_publica_pem=receiver_pub_key_pem,
+        remetente=username,
+        destinatario=receiver,
+    )
 
     # Montar payload final
     msg_payload = {
         "action": "send_message",
         "token": token,
         "to": receiver,
-        "content_encrypted": encrypted_message,
-        "key_encrypted": encrypted_key,
+        "content_encrypted": packet,   # "CIFRADO_HEX:IV_HEX"
+        "key_encrypted": cek_b64,      # CEK (16 bytes) cifrada via RSA (Base64)
         "timestamp": datetime.datetime.utcnow().isoformat(),
+        "from": username,
     }
 
     # ==============================
@@ -144,15 +151,19 @@ async def send_encrypted_message(username: str, token: str, host: str, port: int
 def read_and_decrypt_messages(username: str):
     """
     Lê e descriptografa mensagens armazenadas localmente.
-    Espera arquivos JSON no diretório 'messages/'.
+    Espera arquivos JSON no diretório 'messages/' com os campos:
+      - content_encrypted: "CIFRADO_HEX:IV_HEX"
+      - key_encrypted: CEK criptografada em Base64 (RSA)
+      - timestamp, from
     """
     private_key_path = f"keys/{username}_private.pem"
     if not os.path.exists(private_key_path):
         print("❌ Chave privada não encontrada.")
         return
 
-    with open(private_key_path, "rb") as f:
-        private_key = f.read()
+    # sua RSAManager usa PEM em texto
+    with open(private_key_path, "r", encoding="utf-8") as f:
+        private_key_pem = f.read()
 
     messages_dir = "messages"
     user_messages = [
@@ -165,24 +176,34 @@ def read_and_decrypt_messages(username: str):
         return
 
     print(f"\n=== 📩 Mensagens recebidas para {username} ===")
-    for file in user_messages:
+    for file in sorted(user_messages):
         try:
             with open(os.path.join(messages_dir, file), "r", encoding="utf-8") as f:
                 data = json.load(f)
 
-            encrypted_content = data.get("content_encrypted")
-            encrypted_key = data.get("key_encrypted")
+            packet = data.get("content_encrypted")   # "CIFRADO_HEX:IV_HEX"
+            cek_b64 = data.get("key_encrypted")      # CEK cifrada (Base64)
+            sender = data.get("from", "Desconhecido")
 
-            # Descriptografar chave IDEA
-            idea_key = decrypt_with_rsa(private_key, encrypted_key)
+            if not packet or not cek_b64:
+                print(f"⚠️ Arquivo inválido: {file}")
+                continue
 
-            # Descriptografar mensagem
-            plaintext = decrypt_message(encrypted_content, idea_key)
+            # Decifra com a sua IDEAManager
+            idea_mgr = IDEAManager()
+            plaintext = idea_mgr.decifrar_do_chat(
+                packet=packet,
+                cek_b64=cek_b64,
+                chave_privada_pem=private_key_pem,
+                destinatario=username,
+                remetente=sender,
+            )
 
-            print(f"\n🗓️ {data['timestamp']}")
-            print(f"👤 De: {data['from']}")
+            print(f"\n🗓️ {data.get('timestamp','—')}")
+            print(f"👤 De: {sender}")
             print(f"💬 {plaintext}")
             print("─" * 40)
+
         except Exception as e:
             print(f"⚠️ Erro ao ler {file}: {e}")
 

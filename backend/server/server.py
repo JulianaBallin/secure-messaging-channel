@@ -30,6 +30,7 @@ from backend.server.handlers import (
     handle_login,
     handle_list_users,
     handle_send_message,
+    handle_send_group_message,
 )
 from backend.auth.auth_jwt import verify_access_token
 from backend.utils.logger_config import server_logger as log
@@ -51,16 +52,35 @@ def ensure_certificates():
     """Generate self-signed TLS certificate if not exist."""
     if not (os.path.exists("cert.pem") and os.path.exists("key.pem")):
         print("🔐 Gerando certificado TLS autoassinado...")
-        subprocess.run(
-            [
+
+        comandos_openssl = [
                 "openssl", "req", "-new", "-x509", "-days", "365",
                 "-nodes", "-out", "cert.pem", "-keyout", "key.pem",
                 "-subj", "/CN=CipherTalk-Server"
-            ],
-            check=True
-        )
-        print("✅ Certificados TLS gerados com sucesso.")
-        log.info("🔐 Certificados TLS autoassinados gerados.")
+        ]
+
+        ssl_candidates = [
+            "openssl", "C:\\Program Files (x86)\\Git\\usr\\bin\\openssl.exe",
+            "C:\\Program Files\\OpenSSL-Win64\\bin\\openssl.exe",
+            "C:\\Program Files (x86)\\OpenSSL-Win32\\bin\\openssl.exe",
+            "C:\\Program Files\\Git\\usr\\bin\\openssl.exe"
+        ]
+
+        for ssl in ssl_candidates:
+            try:
+                comandos_openssl[0] = ssl
+                subprocess.run(comandos_openssl, check=True, capture_output=True, text=True)
+                print("✅ Certificados TLS gerados com sucesso.")
+                log.info("🔐 Certificados TLS autoassinados gerados.")
+                return
+            except FileNotFoundError:
+                log.warning(f"⚠️ OpenSSL não encontrado: {comandos_openssl[0]}")
+            except subprocess.CalledProcessError as e:
+                log.error(f"❌ Falha ao executar OpenSSL ({comandos_openssl[0]}): {e.stderr or e}")
+            except Exception as e:
+                log.error(f"❌ Erro inesperado ao tentar gerar certificados: {e}")
+
+        log.error(f"🚫 Nenhuma versão funcional do OpenSSL foi encontrada. Necessária instalação do OpenSSL.")
 
 
 def create_ssl_context() -> ssl.SSLContext:
@@ -120,7 +140,11 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
         # ----------------------------
         if action == "resume_session":
             token = message.get("token")
-            username = verify_access_token(token)
+            try:
+                username = verify_access_token(token)
+            except Exception as e:
+                log.error(f"[RESUME ERROR] Falha ao verificar token: {e}")
+                username = None
             if not username:
                 writer.write("AUTH_FAILED\n".encode("utf-8"))
                 await writer.drain()
@@ -171,6 +195,8 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                     await handle_list_users(db, writer, payload, ONLINE_USERS)
                 elif action == "send_message":
                     await handle_send_message(db, payload, ONLINE_USERS)
+                elif action == "send_group_message":
+                    await handle_send_group_message(db, payload, ONLINE_USERS)
                 else:
                     log.warning(f"[WARN] Ação desconhecida: {action}")
                     writer.write(f"❌ Ação desconhecida: {action}\n".encode("utf-8"))

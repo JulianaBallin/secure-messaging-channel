@@ -25,7 +25,7 @@ from dotenv import load_dotenv
 # ----------------------------
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-from backend.crypto.rsa_manager import generate_rsa_keypair
+from backend.crypto.rsa_manager import RSAManager
 
 # -----------------------------
 # ⚙️ Configuração
@@ -83,32 +83,40 @@ async def register_user_tls():
 
     # --------------------------
     # 🔑 Geração das chaves RSA
+    # RSAManager.gerar_par_chaves() retorna (privada_str, publica_str)
     # --------------------------
-    public_key, private_key = generate_rsa_keypair()
-    private_path = f"keys/{username}_private.pem"
+    private_key_str, public_key_str = RSAManager.gerar_par_chaves()
 
-    # Salvar chave privada localmente (modo seguro)
-    with open(private_path, "wb") as f:
-        f.write(private_key)
-    os.chmod(private_path, 0o600)
+    private_path = f"keys/{username}_private.pem"
+    with open(private_path, "w", encoding="utf-8") as f:
+        f.write(private_key_str)
+    # Em Windows o chmod não aplica POSIX, mas manter não faz mal
+    try:
+        os.chmod(private_path, 0o600)
+    except Exception:
+        pass
     print(f"🔒 Chave privada salva com segurança em {private_path}")
 
-    public_key_b64 = b64encode(public_key).decode()
+    # Pública em Base64 para transporte
+    public_key_b64 = b64encode(public_key_str.encode("utf-8")).decode("utf-8")
 
     # --------------------------
     # 🌐 Conexão TLS com servidor
     # --------------------------
     ssl_context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
     ssl_context.check_hostname = False
-    ssl_context.verify_mode = ssl.CERT_NONE  # opcional: não verificar hostname (auto-signed)
+    ssl_context.verify_mode = ssl.CERT_NONE  # opcional: autoassinado
 
     try:
-        reader, writer = await asyncio.open_connection(HOST, PORT)
+        reader, writer = await asyncio.open_connection(HOST, PORT, ssl=ssl_context)
     except ssl.SSLError as e:
         print(f"💥 Erro SSL: {e}")
         return
     except ConnectionRefusedError:
         print("🚫 Servidor indisponível. Verifique se está em execução.")
+        return
+    except Exception as e:
+        print(f"⚠️ Falha na conexão: {e}")
         return
 
     # --------------------------
