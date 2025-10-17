@@ -69,6 +69,7 @@ keys/*
 logs/
 *.pem
 *.log
+openssl.cnf
 
 # ================================
 # 🐳 Docker

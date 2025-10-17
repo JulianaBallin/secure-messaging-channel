@@ -1,25 +1,41 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import Link from "next/link";
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [status, setStatus] = useState("");
+  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const router = useRouter();
 
   const handleLogin = async () => {
-    const res = await fetch("http://127.0.0.1:8000/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
-    });
-    const data = await res.json();
-    if (data.success) setStatus("✅ Login bem-sucedido!");
-    else setStatus("❌ " + data.error);
+    setMessage(null);
+    try {
+      const res = await fetch("http://127.0.0.1:8000/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        setMessage({ type: "error", text: "❌ Login falhou: " + text });
+        return;
+      }
+
+      const data = await res.json();
+      localStorage.setItem("token", data.token);
+      setMessage({ type: "success", text: "✅ Login realizado com sucesso!" });
+      setTimeout(() => router.push("/chat"), 1000);
+    } catch (err) {
+      console.error(err);
+      setMessage({ type: "error", text: "❌ Erro de conexão com o servidor." });
+    }
   };
 
   return (
@@ -37,14 +53,22 @@ export default function LoginPage() {
             Entrar
           </Button>
 
-          <p className="text-center text-sm text-gray-500">{status}</p>
+          {message && (
+            <p
+              className={`text-center mt-2 ${
+                message.type === "success" ? "text-green-600" : "text-red-600"
+              }`}
+            >
+              {message.text}
+            </p>
+          )}
 
-          <div className="flex justify-between items-center pt-2 text-sm">
-            <Link href="/signup" className="text-blue-600 hover:underline">Criar conta</Link>
-            <Link href="/chat" className="text-blue-600 hover:underline">Ir para o Chat</Link>
-          </div>
+          <Link href="/signup" className="text-blue-600 hover:underline block text-center mt-2">
+            Não possui conta? Signup
+          </Link>
         </CardContent>
       </Card>
     </div>
   );
 }
+

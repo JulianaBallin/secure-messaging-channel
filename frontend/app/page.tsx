@@ -27,11 +27,6 @@ export default function HomePage() {
               </Button>
             </Link>
 
-            <Link href="/chat" className="w-full">
-              <Button className="w-full bg-purple-600 hover:bg-purple-700 text-white font-medium">
-                💬 Entrar no Chat
-              </Button>
-            </Link>
           </div>
         </CardContent>
       </Card>
