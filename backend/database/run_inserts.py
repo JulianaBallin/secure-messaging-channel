@@ -11,11 +11,30 @@ Recursos:
 """
 
 import os
+import sys
+
+# 🔧 Corrige sys.path quando o script é rodado diretamente
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "..", ".."))
+sys.path.insert(0, PROJECT_ROOT)
+
+
 import datetime
 from getpass import getpass
 from backend.database.connection import SessionLocal
 from backend.auth.models import User, Group, GroupMember, Message
+from backend.database.connection import engine, Base
 from backend.utils.logger_config import database_logger as dblog
+from backend.auth.security import hash_senha
+from backend.crypto.rsa_manager import RSAManager
+
+
+# ======================================================
+# 🏗️ Garante que o banco e as tabelas existam
+# ======================================================
+print("🧱 Verificando estrutura do banco...")
+Base.metadata.create_all(bind=engine)
+print("✅ Tabelas verificadas e prontas.\n")
 
 db = SessionLocal()
 
@@ -24,7 +43,13 @@ db = SessionLocal()
 # 1️⃣ Criar novo usuário
 # ======================================================
 def criar_usuario():
-    """Cria um novo usuário com senha e chave pública (opcional)."""
+    """
+    Cria um novo usuário:
+    - Gera hash Argon2id da senha;
+    - Gera par RSA (privada e pública);
+    - Salva a chave privada em 'keys/<username>_private.pem';
+    - Armazena a senha hash e a chave pública no banco.
+    """
     username = input("👤 Nome do usuário: ").strip()
     password = getpass("🔑 Senha: ").strip()
 
@@ -32,11 +57,46 @@ def criar_usuario():
         print("❌ Usuário e senha são obrigatórios.")
         return
 
-    user = User(username=username, password_hash=password)
-    db.add(user)
+    # Verifica duplicidade
+    if db.query(User).filter_by(username=username).first():
+        print("⚠️ Usuário já existe no banco.")
+        return
+
+    # Gera hash Argon2id da senha
+    password_hash = hash_senha(password)
+
+    # Gera par RSA
+    private_key_pem, public_key_pem = RSAManager.gerar_par_chaves()
+
+    # Garante a existência da pasta 'keys' na raiz do projeto
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    keys_dir = os.path.join(project_root, "keys")
+    os.makedirs(keys_dir, exist_ok=True)
+
+    # Caminho seguro do arquivo da chave privada
+    private_key_path = os.path.join(keys_dir, f"{username}_private.pem")
+
+    # Salva a chave privada em arquivo local (somente leitura)
+    with open(private_key_path, "w", encoding="utf-8") as key_file:
+        key_file.write(private_key_pem)
+    os.chmod(private_key_path, 0o600)  # restrição de permissão
+
+    # Cria o usuário com a chave pública e o hash da senha
+    new_user = User(
+        username=username,
+        password_hash=password_hash,
+        public_key=public_key_pem.encode(),  # armazenar em bytes
+    )
+
+    db.add(new_user)
     db.commit()
-    print(f"✅ Usuário '{username}' criado com sucesso (ID={user.id}).")
-    dblog.info(f"[INSERT_USER] Usuário criado: {username}")
+
+    print(f"\n✅ Usuário '{username}' criado com sucesso (ID={new_user.id}).")
+    print(f"🔒 Chave privada salva em: {private_key_path}")
+    print(f"🗝️  A chave pública foi armazenada no banco de dados.")
+    print("\n" + "=" * 70)
+    dblog.info(f"[INSERT_USER_RSA] Usuário criado: {username} | Chave privada: {private_key_path}")
+
 
 
 # ======================================================

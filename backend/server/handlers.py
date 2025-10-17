@@ -22,9 +22,11 @@ import datetime
 from typing import Dict
 from sqlalchemy.orm import Session
 from backend.auth.models import User, Message, Group, GroupMember
-from backend.auth.security import hash_senha as hash_password, verificar_senha as verify_password
 from backend.auth.auth_jwt import create_access_token, verify_access_token
 from backend.utils.logger_config import server_logger as log
+from backend.auth.security import hash_senha as hash_password, verificar_senha as verify_password
+from backend.crypto.rsa_manager import RSAManager
+
 
 
 # ======================================================
@@ -37,33 +39,50 @@ USERS_LOCK = asyncio.Lock()
 # CADASTRO
 # ======================================================
 async def handle_register(db: Session, writer, creds: dict) -> None:
-    """Cadastra novo usuário com chave RSA pública."""
+    """Cadastra novo usuário, gera par de chaves RSA e armazena senha com hash Argon2id."""
     username = creds.get("username")
     password = creds.get("password")
-    public_key_b64 = creds.get("public_key")
 
-    if not username or not password or not public_key_b64:
+    if not username or not password:
         writer.write("❌ Dados incompletos.\n".encode())
         await writer.drain()
         log.warning(f"[REGISTER_FAIL] Campos ausentes para cadastro de {username}")
         return
 
     async with USERS_LOCK:
+        # Verifica se o usuário já existe
         if db.query(User).filter(User.username == username).first():
             writer.write("❌ Usuário já existe.\n".encode())
             await writer.drain()
             log.warning(f"[REGISTER_DUPLICATE] Tentativa duplicada de {username}")
             return
 
+        # Gera par de chaves RSA (privada e pública)
+        private_key_pem, public_key_pem = RSAManager.gerar_par_chaves()
+
+        # Hash da senha com Argon2
+        hashed_password = hash_password(password)
+
+        # Cria e persiste o novo usuário
         new_user = User(
             username=username,
-            password_hash=hash_password(password),
-            public_key=public_key_b64.encode(),
+            password_hash=hashed_password,
+            public_key=public_key_pem.encode(),  # armazenar em bytes
         )
         db.add(new_user)
         db.commit()
 
-    writer.write("✅ Usuário criado com sucesso!\n".encode())
+    # Retorna chave privada ao cliente (pode ser exibida uma única vez)
+    writer.write(
+        json.dumps(
+            {
+                "status": "success",
+                "message": f"Usuário '{username}' criado com sucesso.",
+                "private_key": private_key_pem,
+            }
+        ).encode()
+        + b"\n"
+    )
     await writer.drain()
     log.info(f"[REGISTER_OK] Novo usuário registrado: {username}")
 

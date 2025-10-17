@@ -12,6 +12,10 @@ Recursos:
 import sys, os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+from backend.crypto.idea_manager import IDEAManager
+from backend.crypto.rsa_manager import RSAManager
+from backend.utils.logger_config import crypto_logger as log
+import datetime
 from backend.database.connection import SessionLocal
 from backend.database.queries.users import get_user_by_username
 from backend.database.queries.groups import list_members
@@ -157,6 +161,90 @@ def mensagens_grupos():
         remetente = db.query(User).get(m.sender_id).username
         print(f"• {remetente:<15} | {m.timestamp} | {m.content_encrypted[:60]}...")
     dblog.info(f"[AUDIT] Consulta: mensagens_grupos({nome_grupo}) executada.")
+
+
+# ======================================================
+# 8️⃣  Funções de chat seguro (IDEA + RSA)
+# ======================================================
+
+def enviar_mensagem_segura(db, remetente: str):
+    """Envia uma mensagem criptografada entre usuários existentes."""
+    usuarios = [u.username for u in db.query(User).all() if u.username != remetente]
+    if not usuarios:
+        print("❌ Nenhum destinatário disponível.")
+        return
+
+    print("\nUsuários disponíveis:")
+    for i, nome in enumerate(usuarios, 1):
+        print(f"{i}. {nome}")
+
+    try:
+        escolha = int(input("Escolha o número do destinatário: ")) - 1
+        if escolha < 0 or escolha >= len(usuarios):
+            print("❌ Escolha inválida.")
+            return
+
+        destinatario = usuarios[escolha]
+        texto = input("Mensagem: ").strip()
+        if not texto:
+            print("⚠️ Mensagem vazia.")
+            return
+
+        dest_user = db.query(User).filter_by(username=destinatario).first()
+        public_key = dest_user.public_key.decode()
+
+        mgr = IDEAManager()
+        conteudo_cifrado, chave_sessao_cifrada = mgr.cifrar_para_chat(
+            texto, remetente, destinatario, public_key
+        )
+
+        remetente_user = db.query(User).filter_by(username=remetente).first()
+        msg = Message(
+            sender_id=remetente_user.id,
+            receiver_id=dest_user.id,
+            content_encrypted=conteudo_cifrado,
+            key_encrypted=chave_sessao_cifrada,
+            timestamp=datetime.datetime.utcnow(),
+        )
+        db.add(msg)
+        db.commit()
+
+        print(f"📤 Mensagem criptografada enviada para {destinatario}.")
+        log.info(f"[SEND_OK] {remetente} → {destinatario} | Mensagem cifrada salva.")
+    except Exception as e:
+        print(f"❌ Erro: {e}")
+        log.error(f"[SEND_FAIL] {e}")
+
+
+def receber_mensagens_seguras(db, usuario: str):
+    """Decifra e exibe mensagens criptografadas recebidas pelo usuário."""
+    mensagens = (
+        db.query(Message)
+        .join(User, User.id == Message.receiver_id)
+        .filter(User.username == usuario)
+        .all()
+    )
+    if not mensagens:
+        print("📭 Nenhuma mensagem encontrada.")
+        return
+
+    print(f"\n📥 Mensagens recebidas ({len(mensagens)}):")
+    for msg in mensagens:
+        try:
+            remetente = db.query(User).get(msg.sender_id).username
+            chave_privada_path = os.path.join("keys", f"{usuario}_private.pem")
+            private_key = RSAManager.carregar_chave_privada(chave_privada_path)
+
+            mgr = IDEAManager()
+            texto = mgr.decifrar_do_chat(msg.content_encrypted, msg.key_encrypted, usuario, private_key)
+
+            print(f"🔓 {remetente} → {usuario}: {texto}")
+            log.info(f"[RECEIVE_OK] {usuario} decifrou mensagem de {remetente}.")
+            db.delete(msg)
+        except Exception as e:
+            print(f"❌ Erro: {e}")
+            log.error(f"[RECEIVE_FAIL] {e}")
+    db.commit()
 
 
 # ======================================================
