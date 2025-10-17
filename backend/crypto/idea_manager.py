@@ -1,6 +1,6 @@
 from backend.crypto.idea import IDEA
 from backend.crypto.rsa_manager import RSAManager
-from backend.utils.crypto_logger import crypto_logger
+from backend.utils.logger_config import crypto_logger
 
 class IDEAManager:
     def __init__(self):
@@ -62,3 +62,17 @@ class IDEAManager:
     def get_chave_sessao_hex(self):
         #Retorna a chave de sessão atual em hexadecimal
         return self.idea.get_chave_sessao_hex()
+
+
+    @staticmethod
+    def gerar_chave() -> bytes:
+        """Gera chave IDEA de 128 bits e loga fingerprint SHA256."""
+        import os
+        key_bytes = os.urandom(16)
+        from hashlib import sha256
+        from backend.utils.logger_config import database_logger as dblog
+
+        fingerprint = sha256(key_bytes).hexdigest()
+        dblog.info(f"[GENERATE_IDEA_KEY] Chave IDEA gerada | SHA256={fingerprint}")
+        return key_bytes
+

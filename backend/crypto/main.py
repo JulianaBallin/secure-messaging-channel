@@ -15,8 +15,9 @@ PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "..", ".."))
 sys.path.insert(0, PROJECT_ROOT)
 
 from backend.database.connection import SessionLocal
-from backend.database.run_inserts import criar_usuario
-from backend.database.run_queries import listar_usuarios, enviar_mensagem_segura, receber_mensagens_seguras
+from backend.database.queries.users import create_user
+from backend.database.queries.users import list_users
+from backend.database.queries.messages import create_message, get_chat_history
 
 # Sessão de banco
 db = SessionLocal()
@@ -34,9 +35,9 @@ def main():
         opcao = input("\nEscolha: ").strip()
 
         if opcao == "1":
-            criar_usuario()
+            create_user()
         elif opcao == "2":
-            usuarios = [u.username for u in db.query(listar_usuarios.__globals__["User"]).all()]
+            usuarios = [u.username for u in db.query(list_users.__globals__["User"]).all()]
             if not usuarios:
                 print("⚠️ Nenhum usuário cadastrado.")
                 continue
@@ -61,9 +62,9 @@ def main():
 
                     sub = input("\nEscolha: ").strip()
                     if sub == "1":
-                        enviar_mensagem_segura(db, usuario)
+                        create_message(db, usuario)
                     elif sub == "2":
-                        receber_mensagens_seguras(db, usuario)
+                        get_chat_history(db, usuario)
                     elif sub == "3":
                         break
                     elif sub == "4":

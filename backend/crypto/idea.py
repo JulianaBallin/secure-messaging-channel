@@ -1,7 +1,7 @@
 import os
 import secrets
 from .idea_fallback import padding_pkcs7, remove_pkcs7
-from backend.utils.crypto_logger import crypto_logger  
+from backend.utils.logger_config import crypto_logger
 
 
 
