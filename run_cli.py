@@ -193,7 +193,7 @@ async def fazer_login():
         return
 
     # Listener assíncrono para receber mensagens em tempo real
-    asyncio.create_task(start_listener(username, token, HOST, PORT))
+    asyncio.create_task(start_listener(HOST, PORT))
 
     while True:
         os.system("cls" if os.name == "nt" else "clear")

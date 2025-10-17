@@ -10,42 +10,42 @@ class IDEAManager:
         """Cifra uma mensagem para o chat usando IDEA + RSA"""
         
         # LOG: Início do processo de envio
-        crypto_logger.logger.info("=== INICIO PROCESSO DE ENVIO ===")
-        crypto_logger.logger.info(f"Remetente: {remetente}")
-        crypto_logger.logger.info(f"Destinatario: {destinatario}")
-        crypto_logger.logger.info(f"Mensagem Original: {texto_plano}")
+        crypto_logger.info("=== INICIO PROCESSO DE ENVIO ===")
+        crypto_logger.info(f"Remetente: {remetente}")
+        crypto_logger.info(f"Destinatario: {destinatario}")
+        crypto_logger.info(f"Mensagem Original: {texto_plano}")
         
         # A chave de sessão já foi gerada automaticamente no __init__ do IDEA
         chave_sessao_hex = self.idea.get_chave_sessao_hex()
-        crypto_logger.logger.info(f"Chave de Sessao IDEA: {chave_sessao_hex}")
+        crypto_logger.info(f"Chave de Sessao IDEA: {chave_sessao_hex}")
         
         # Cifrar a mensagem com IDEA
         resultado = self.idea.cifrar_cbc(texto_plano)
-        crypto_logger.logger.info(f"Mensagem Criptografada (IDEA-CBC): {resultado}")
+        crypto_logger.info(f"Mensagem Criptografada (IDEA-CBC): {resultado}")
         
         # Converter chave de sessão para bytes
         chave_sessao_bytes = bytes.fromhex(chave_sessao_hex)
         
         # Cifrar a chave de sessão com RSA
         chave_sessao_cripto_b64 = RSAManager.cifrar_chave_sessao(chave_sessao_bytes, chave_publica_destinatario_pem)
-        crypto_logger.logger.info(f"Chave de Sessao Criptografada (RSA): {chave_sessao_cripto_b64[:50]}...")
+        crypto_logger.info(f"Chave de Sessao Criptografada (RSA): {chave_sessao_cripto_b64[:50]}...")
         
-        crypto_logger.logger.info("=== FIM PROCESSO DE ENVIO ===")
+        crypto_logger.info("=== FIM PROCESSO DE ENVIO ===")
         
         return resultado, chave_sessao_cripto_b64
     
     def decifrar_do_chat(self, packet: str, cek_b64: str, destinatario: str, chave_privada_pem: str):
         #Decifra uma mensagem do chat usando IDEA + RSA
         
-        crypto_logger.logger.info("=== INICIO PROCESSO DE RECEBIMENTO ===")
-        crypto_logger.logger.info(f"Destinatario: {destinatario}")
-        crypto_logger.logger.info(f"Mensagem Criptografada Recebida: {packet}")
-        crypto_logger.logger.info(f"Chave de Sessao Criptografada Recebida: {cek_b64[:50]}...")
+        crypto_logger.info("=== INICIO PROCESSO DE RECEBIMENTO ===")
+        crypto_logger.info(f"Destinatario: {destinatario}")
+        crypto_logger.info(f"Mensagem Criptografada Recebida: {packet}")
+        crypto_logger.info(f"Chave de Sessao Criptografada Recebida: {cek_b64[:50]}...")
         
         # Decifrar a chave de sessão com RSA
         chave_sessao_bytes = RSAManager.decifrar_chave_sessao(cek_b64, chave_privada_pem)
         chave_sessao_hex = chave_sessao_bytes.hex().upper()
-        crypto_logger.logger.info(f"Chave de Sessao Decifrada (RSA): {chave_sessao_hex}")
+        crypto_logger.info(f"Chave de Sessao Decifrada (RSA): {chave_sessao_hex}")
         
         # Configurar IDEA com a chave de sessão decifrada
         chave_sessao_int = int.from_bytes(chave_sessao_bytes, 'big')
@@ -53,9 +53,9 @@ class IDEAManager:
         
         # Decifrar a mensagem com IDEA
         texto_decifrado = self.idea.decifrar_cbc(packet)
-        crypto_logger.logger.info(f"Mensagem Decifrada: {texto_decifrado}")
+        crypto_logger.info(f"Mensagem Decifrada: {texto_decifrado}")
         
-        crypto_logger.logger.info("=== FIM PROCESSO DE RECEBIMENTO ===")
+        crypto_logger.info("=== FIM PROCESSO DE RECEBIMENTO ===")
         
         return texto_decifrado
     
