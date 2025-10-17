@@ -1,96 +1,70 @@
-# ==========================================
-# backend/database/queries/users.py
-# ==========================================
 """
-users.py
---------
-
-Consultas e operações relacionadas a usuários.
-Inclui criação, busca, atualização de chaves públicas e status online.
+users.py — CRUD para tabela 'users'
 """
 
-from sqlalchemy.orm import Session
 from backend.auth.models import User
+from backend.auth.security import hash_senha
+from backend.crypto.rsa_manager import RSAManager
 from backend.utils.logger_config import database_logger as dblog
+from backend.utils.db_utils import safe_db_operation
 
+import os
 
-# ======================================================
-# Buscar usuário
-# ======================================================
-def get_user_by_username(db: Session, username: str):
-    """Busca um usuário pelo nome de usuário."""
-    user = db.query(User).filter(User.username == username).first()
-    if user:
-        dblog.info(f"[USER_GET] Usuário encontrado: {username}")
-    else:
-        dblog.warning(f"[USER_GET_FAIL] Usuário não encontrado: {username}")
+# CREATE
+@safe_db_operation
+def create_user(db, username: str, password: str):
+    """Cria um novo usuário com senha hash e chave RSA."""
+    if db.query(User).filter_by(username=username).first():
+        raise ValueError(f"Usuário '{username}' já existe.")
+
+    password_hash = hash_senha(password)
+    private_key_pem, public_key_pem = RSAManager.gerar_par_chaves()
+
+    keys_dir = os.path.join(os.path.dirname(__file__), "../../../keys")
+    os.makedirs(keys_dir, exist_ok=True)
+    private_key_path = os.path.join(keys_dir, f"{username}_private.pem")
+
+    with open(private_key_path, "w", encoding="utf-8") as key_file:
+        key_file.write(private_key_pem)
+    os.chmod(private_key_path, 0o600)
+
+    user = User(username=username, password_hash=password_hash, public_key=public_key_pem.encode())
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    dblog.info(f"[CREATE_USER] {username} criado. Chave privada: {private_key_path}")
     return user
 
 
-# ======================================================
-# Criar usuário
-# ======================================================
-def create_user(db: Session, username: str, password_hash: str, public_key: bytes | None = None):
-    """Cria um novo usuário com hash de senha e chave pública opcional."""
-    if db.query(User).filter(User.username == username).first():
-        dblog.warning(f"[USER_CREATE_DUPLICATE] {username} já existe.")
-        return None
+# READ
+def get_user_by_username(db, username: str):
+    return db.query(User).filter(User.username == username).first()
 
-    new_user = User(username=username, password_hash=password_hash, public_key=public_key)
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
-    dblog.info(f"[USER_CREATE] Usuário criado: {username}")
-    return new_user
+def list_users(db):
+    return db.query(User).all()
 
 
-# ======================================================
-# Atualizar chave pública
-# ======================================================
-def update_public_key(db: Session, username: str, new_key: bytes):
-    """Atualiza a chave pública de um usuário existente."""
-    user = db.query(User).filter(User.username == username).first()
+# UPDATE
+@safe_db_operation
+def set_user_online_status(db, username: str, online: bool):
+    user = get_user_by_username(db, username)
     if not user:
-        dblog.error(f"[USER_KEY_UPDATE_FAIL] Usuário não encontrado: {username}")
-        return False
-
-    user.public_key = new_key
-    db.commit()
-    dblog.info(f"[USER_KEY_UPDATE] Chave pública atualizada para {username}")
-    return True
-
-
-# ======================================================
-# Atualizar status online/offline
-# ======================================================
-def set_user_status(db: Session, username: str, online: bool):
-    """Atualiza o status (online/offline) de um usuário."""
-    user = db.query(User).filter(User.username == username).first()
-    if not user:
-        dblog.warning(f"[USER_STATUS_FAIL] Usuário não encontrado: {username}")
-        return False
-
+        raise ValueError("Usuário não encontrado.")
     user.is_online = online
     db.commit()
-    state = "🟢 online" if online else "⚫ offline"
-    dblog.info(f"[USER_STATUS] {username} está agora {state}.")
+    dblog.info(f"[UPDATE_USER] {username} online={online}")
+    return user
+
+
+
+# DELETE
+@safe_db_operation
+def delete_user(db, username: str):
+    user = get_user_by_username(db, username)
+    if not user:
+        raise ValueError("Usuário não encontrado.")
+    db.delete(user)
+    db.commit()
+    dblog.info(f"[DELETE_USER] {username}")
     return True
-
-
-# ======================================================
-# Listar todos os usuários
-# ======================================================
-def list_all_users(db: Session):
-    """Lista todos os usuários cadastrados com status e chaves."""
-    users = db.query(User).all()
-    dblog.info(f"[USER_LIST] {len(users)} usuários retornados.")
-    return [
-        {
-            "id": u.id,
-            "username": u.username,
-            "online": u.is_online,
-            "has_key": bool(u.public_key),
-            "created_at": str(u.created_at),
-        }
-        for u in users
-    ]

@@ -1,222 +1,86 @@
-from backend.crypto.idea_manager import IDEAManager
-from backend.crypto.rsa_manager import RSAManager
+"""
+main.py
+--------
+
+Interface principal do sistema de comunicação segura CipherTalk.
+Apenas importa e executa funções já existentes dos módulos de banco e criptografia.
+"""
+
 import os
-from backend.utils.crypto_logger import crypto_logger
+import sys
 
+# 🔧 Ajusta caminho para o backend
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "..", ".."))
+sys.path.insert(0, PROJECT_ROOT)
 
-def criar_usuario(nome):
-    pasta = f"keys/{nome}"
-    if not os.path.exists(pasta):
-        os.makedirs(pasta)
-    
-    privada_path = f"{pasta}/privada.pem"
-    publica_path = f"{pasta}/publica.pem"
-    
-    if not os.path.exists(privada_path):
-        print(f"Gerando chaves para {nome}...")
-        privada_pem, publica_pem = RSAManager.gerar_par_chaves()
-        with open(privada_path, 'w') as f:
-            f.write(privada_pem)
-        with open(publica_path, 'w') as f:
-            f.write(publica_pem)
-        
-        # LOG: Usuário criado
-        crypto_logger.log_usuario_criado(nome, publica_pem, privada_pem)
-        return True
-    return False
+from backend.database.connection import SessionLocal
+from backend.database.queries.users import create_user
+from backend.database.queries.users import list_users
+from backend.database.queries.messages import create_message, get_chat_history
 
-def listar_usuarios():
-    if not os.path.exists("keys"):
-        return []
-    
-    usuarios = []
-    for item in os.listdir("keys"):
-        if os.path.isdir(f"keys/{item}") and os.path.exists(f"keys/{item}/publica.pem"):
-            usuarios.append(item)
-    return usuarios
+# Sessão de banco
+db = SessionLocal()
+
 
 def main():
-    print("CHAT SEGURO")
-    print("=" * 20)
-    
-    usuarios_padrao = ["Fernando", "Ana", "Juliana", "Marcelo"]
-    print("Criando usuarios...")
-    for usuario in usuarios_padrao:
-        if criar_usuario(usuario):
-            print(f"  {usuario}")
-    
-    usuario_atual = None
-    
+    print("\n💬 CHAT SEGURO — IDEA + RSA + SQLITE")
+    print("=" * 45)
+
     while True:
-        if usuario_atual is None:
-            print("\nSELECIONAR USUARIO")
-            usuarios = listar_usuarios()
-            
+        print("\n1️⃣  - Criar novo usuário")
+        print("2️⃣  - Selecionar usuário")
+        print("3️⃣  - Sair")
+
+        opcao = input("\nEscolha: ").strip()
+
+        if opcao == "1":
+            create_user()
+        elif opcao == "2":
+            usuarios = [u.username for u in db.query(list_users.__globals__["User"]).all()]
             if not usuarios:
-                print("Nenhum usuario encontrado")
-                return
-                
-            print("\nUsuarios disponiveis:")
-            for i, usuario in enumerate(usuarios, 1):
-                print(f"  {i}. {usuario}")
-            print("  +. Criar novo usuario")
-            
-            escolha = input("\nEscolha: ").strip()
-            
-            if escolha == '+':
-                novo_nome = input("Nome do novo usuario: ").strip()
-                if novo_nome:
-                    criar_usuario(novo_nome)
-                    print(f"Usuario {novo_nome} criado!")
+                print("⚠️ Nenhum usuário cadastrado.")
                 continue
-                
+
+            for i, nome in enumerate(usuarios, 1):
+                print(f"{i}. {nome}")
             try:
-                idx = int(escolha) - 1
-                if 0 <= idx < len(usuarios):
-                    usuario_atual = usuarios[idx]
-                    print(f"Usuario: {usuario_atual}")
-                    
-                    # LOG: Usuário selecionado
-                    crypto_logger.logger.info("=== USUARIO SELECIONADO ===")
-                    crypto_logger.logger.info(f"Usuario atual: {usuario_atual}")
-                    crypto_logger.logger.info("=" * 50)
-                    
-                else:
-                    print("Escolha invalida")
-            except ValueError:
-                print("Digite um numero ou '+'")
-            continue
-        
-        print(f"\nUsuario: {usuario_atual}")
-        print("1. Enviar mensagem")
-        print("2. Receber mensagem") 
-        print("3. Trocar usuario")
-        print("4. Criar novo usuario")
-        print("5. Sair")
-        
-        op = input("\nOpcao: ").strip()
-        
-        if op == "1":
-            usuarios = listar_usuarios()
-            outros_usuarios = [u for u in usuarios if u != usuario_atual]
-            
-            if not outros_usuarios:
-                print("Crie outros usuarios primeiro")
-                continue
-                
-            print("\nEnviar para:")
-            for i, usuario in enumerate(outros_usuarios, 1):
-                print(f"  {i}. {usuario}")
-            
-            try:
-                escolha = int(input("\nDestinatario: ")) - 1
-                if 0 <= escolha < len(outros_usuarios):
-                    destinatario = outros_usuarios[escolha]
-                    mensagem = input(f"Mensagem para {destinatario}: ").strip()
-                    
-                    if mensagem:
-                        # LOG: Início do processo de envio
-                        crypto_logger.logger.info("=== INICIANDO PROCESSO DE ENVIO ===")
-                        crypto_logger.logger.info(f"Remetente: {usuario_atual}")
-                        crypto_logger.logger.info(f"Destinatario: {destinatario}")
-                        crypto_logger.logger.info(f"Mensagem a ser enviada: '{mensagem}'")
-                        
-                        # Carregar chave pública do destinatário
-                        chave_publica_path = f"keys/{destinatario}/publica.pem"
-                        crypto_logger.logger.info(f"Chave publica carregada de: {chave_publica_path}")
-                        chave_publica = RSAManager.carregar_chave_publica(chave_publica_path)
-                        
-                        mgr = IDEAManager()
-                        
-                        # Cifrar a mensagem
-                        mensagem_cripto, chave_sessao_cripto = mgr.cifrar_para_chat(
-                            mensagem, usuario_atual, destinatario, chave_publica
-                        )
-                        
-                        print(f"\nPara {destinatario}:")
-                        print(f"Mensagem criptografada: {mensagem_cripto}")
-                        print(f"Chave de sessao criptografada: {chave_sessao_cripto}")
-                        
-                        # LOG: Resumo final para o usuário
-                        crypto_logger.logger.info("=== RESUMO FINAL PARA USUARIO ===")
-                        crypto_logger.logger.info(f"Mensagem criptografada (IDEA-CBC): {mensagem_cripto}")
-                        crypto_logger.logger.info(f"Chave de sessao criptografada (RSA): {chave_sessao_cripto}")
-                        crypto_logger.logger.info("=== PROCESSO DE ENVIO CONCLUIDO ===")
-                        
+                idx = int(input("\nEscolha o usuário: ")) - 1
+                if idx < 0 or idx >= len(usuarios):
+                    print("❌ Escolha inválida.")
+                    continue
+
+                usuario = usuarios[idx]
+                print(f"🔐 Usuário ativo: {usuario}")
+
+                while True:
+                    print(f"\nUsuário: {usuario}")
+                    print("1️⃣  - Enviar mensagem")
+                    print("2️⃣  - Receber mensagens")
+                    print("3️⃣  - Trocar usuário")
+                    print("4️⃣  - Sair")
+
+                    sub = input("\nEscolha: ").strip()
+                    if sub == "1":
+                        create_message(db, usuario)
+                    elif sub == "2":
+                        get_chat_history(db, usuario)
+                    elif sub == "3":
+                        break
+                    elif sub == "4":
+                        db.close()
+                        print("👋 Encerrando sistema.")
+                        return
                     else:
-                        print("Mensagem vazia")
-                        crypto_logger.logger.warning("Tentativa de envio de mensagem vazia")
-                else:
-                    print("Escolha invalida")
-                    
+                        print("❌ Opção inválida.")
             except ValueError:
-                print("Numero invalido")
-            except Exception as e:
-                crypto_logger.logger.error(f"ERRO no envio: {e}")
-                print(f"Erro: {e}")
-        
-        elif op == "2":
-            mensagem_cripto = input("Mensagem criptografada: ").strip()
-            chave_sessao_cripto = input("Chave de sessao criptografada: ").strip()
-            
-            try:
-                # LOG: Início do processo de recebimento
-                crypto_logger.logger.info("=== INICIANDO PROCESSO DE RECEBIMENTO ===")
-                crypto_logger.logger.info(f"Destinatario: {usuario_atual}")
-                crypto_logger.logger.info(f"Mensagem criptografada recebida: {mensagem_cripto}")
-                crypto_logger.logger.info(f"Chave de sessao criptografada recebida: {chave_sessao_cripto}")
-                
-                # Carregar chave privada do usuário atual
-                chave_privada_path = f"keys/{usuario_atual}/privada.pem"
-                crypto_logger.logger.info(f"Chave privada carregada de: {chave_privada_path}")
-                chave_privada = RSAManager.carregar_chave_privada(chave_privada_path)
-                
-                mgr = IDEAManager()
-                
-                # Decifrar a mensagem
-                texto = mgr.decifrar_do_chat(
-                    mensagem_cripto, chave_sessao_cripto, usuario_atual, chave_privada
-                )
-                
-                print(f"\nMensagem: {texto}")
-                
-                # LOG: Resumo final para o usuário
-                crypto_logger.logger.info("=== RESUMO FINAL PARA USUARIO ===")
-                crypto_logger.logger.info(f"Mensagem decifrada: '{texto}'")
-                crypto_logger.logger.info("=== PROCESSO DE RECEBIMENTO CONCLUIDO ===")
-                
-            except Exception as e:
-                crypto_logger.logger.error(f"ERRO no recebimento: {e}")
-                print(f"Erro: {e}")
-        
-        elif op == "3":
-            # LOG: Troca de usuário
-            crypto_logger.logger.info("=== TROCA DE USUARIO ===")
-            crypto_logger.logger.info(f"Usuario anterior: {usuario_atual}")
-            usuario_atual = None
-            crypto_logger.logger.info("Usuario definido como: None")
-            crypto_logger.logger.info("=" * 50)
-            print("Trocando usuario...")
-        
-        elif op == "4":
-            novo_nome = input("Novo usuario: ").strip()
-            if novo_nome:
-                criar_usuario(novo_nome)
-                print(f"Usuario {novo_nome} criado!")
-        
-        elif op == "5":
-            # LOG: Saída do sistema
-            crypto_logger.logger.info("=== SAIDA DO SISTEMA ===")
-            crypto_logger.logger.info(f"Usuario final: {usuario_atual}")
-            crypto_logger.logger.info("Sistema encerrado pelo usuario")
-            crypto_logger.logger.info("=" * 50)
-            
-            print("Ate logo!")
+                print("❌ Entrada inválida.")
+        elif opcao == "3":
+            print("👋 Até logo!")
             break
-        
         else:
-            print("Opcao invalida")
-            crypto_logger.logger.warning(f"Opcao invalida selecionada: {op}")
+            print("❌ Opção inválida.")
+
 
 if __name__ == "__main__":
     main()
