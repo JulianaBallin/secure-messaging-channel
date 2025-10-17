@@ -1,0 +1,238 @@
+{
+  "Ana_Fernando": [
+    {
+      "timestamp": "2025-10-17T10:08:53.755850",
+      "remetente": "Ana",
+      "destinatario": "Fernando",
+      "tipo": "enviada",
+      "mensagem_original": "OII FERNANDO. TUDO BEM COMO VAI?",
+      "mensagem_criptografada": "C7E739C2C1617AA7D3E2AB3042AE6F96E56619901D6EB02E482291C58E5754AB1541320CA3340CA7:F49B79E715FA5501",
+      "chave_sessao_utilizada": "7F8C9ABD1CD0B622C4338F0243BFA36B"
+    },
+    {
+      "timestamp": "2025-10-17T10:09:04.342465",
+      "remetente": "Ana",
+      "destinatario": "Fernando",
+      "tipo": "enviada",
+      "mensagem_original": "ESTOU PREOCUPADA",
+      "mensagem_criptografada": "0F096DF5C9F0BCBE75FA5C9743B76C13CB8D5C2BD6F9C0DD:A6B55B3AFC121252",
+      "chave_sessao_utilizada": "8ECCF80376EC1A42A1517F4753DFB81E"
+    },
+    {
+      "timestamp": "2025-10-17T10:30:45.375382",
+      "remetente": "Ana",
+      "destinatario": "Fernando",
+      "tipo": "enviada",
+      "mensagem_criptografada": "BA86FD8D5B64CE485826A5E804A54961:753FEA31CC59FE50",
+      "chave_sessao_utilizada": "2E163410EC77FF8BE5A7A7681D99FBEA",
+      "chave_rsa_criptografada": "RWWEAHgAAtMwPFmK8eISgWEsW/NRSJBihEryT06GVeOfJ0h5k3vi05zzZTKxwDGYRs9HLVlDpUVfukv3CNKkZAqH20GVqmFmzCtuXXLwhiTL/uMoLrWvj8v+ELLUTDpQhVLITQ0YFS4fWRCay2zRYx/qRWRp81yNN6XVQjL2kdsqMrTo9gqIAGC2Q7yikagSBswWZku11LDF1ooVNo4IYjDiwwsJcZ5ZPZzCul0Cfs0dDKd02lz+nEcZfBRyWvJW7sKRikmagUtDTPfmXiqLof9ixaHyzmHHbTrJx2RsT0wT10o5QUzTwixRFEBo6bS562sivo5dT/CgqXt2AGUHcw=="
+    },
+    {
+      "timestamp": "2025-10-17T10:31:14.587203",
+      "remetente": "Ana",
+      "destinatario": "Fernando",
+      "tipo": "enviada",
+      "mensagem_criptografada": "F97B440B6D088A890B60D3BA957EED5C:3824021D666B8C4F",
+      "chave_sessao_utilizada": "53BB0264403CB48DC11163061EA30D47",
+      "chave_rsa_criptografada": "Vj/+56OIUpzHHL5wlXVFUBC3TNniTY0OwHLw6Ep69XH6c/pLGMRQJCf+NPLGq7zca6ZeIwqXuy6FKnt3sVynuN7NE3YH5Bf4lQZwtMKlXa3AdR/kBztDW2bYvmAzAQSdwnb058OLnkIHT1UVzb+GpPthdXOAt566EMtGCochkD0vqmIFxV+kYPB0ExcRTq2XiQWQUG0pF1P2E9RDfcphTwQf7ocCHeD/UEtG5ozDLrGauMTFIuXzX4iadckl2SRy9rguUXcrkpyZ7sOKGEAmghQ4SfBdmMlXKnIcOgc0hwYdjaBawlnTGx8h7tSKoAbpskYmEM96gVEsVwSkfBJKsg=="
+    },
+    {
+      "timestamp": "2025-10-17T10:38:40.901566",
+      "remetente": "Ana",
+      "destinatario": "Fernando",
+      "tipo": "enviada",
+      "mensagem_criptografada": "91ED3AD65514DE11:CEBD728DC9FFEE6D",
+      "chave_sessao_utilizada": "AA1527C9E0E4F73DBD68459D481C7895",
+      "chave_rsa_criptografada": "FjvPNJJU3rSqgLFnXvmImRgpS5IoZNfMwOk0T1uW2BPFYHIUIpCiBiic/0RoZKUY5pG80C2SQ3KQJw2atWc+CXGNi5n8s2iK0Ye1LYvqk17CAreLsIvMV4nI4sVuaiBvVzjmdh67y2yYoce4Y2xBCoOnzWUsBzKDC7aCCQCuS9i3MTwX3APnq1weZYkoge9JWsX3PNtdTTr95hVDl+EBUXT382xB864/jUOopZsgzMKgTD3EQlpgR5Qh679GzXxOA1WAbGmg32q5mwuy0ipbEVx2fBsB0gFYKrxNx3DncE9iCxDsy6qgX7C9qUWLehKQQyP+6cbC0zm6XPDub0QQWg=="
+    },
+    {
+      "timestamp": "2025-10-17T10:38:48.607434",
+      "remetente": "Ana",
+      "destinatario": "Fernando",
+      "tipo": "enviada",
+      "mensagem_criptografada": "2444F74EA06B2C8007777CD04F6BCC65:A5F9B5EB9102F9E9",
+      "chave_sessao_utilizada": "8AFE179F0A1F641C14D73992B5D34EEA",
+      "chave_rsa_criptografada": "t9ZfqZHkZQTQS/UEFQVtIjzVo5fskRvhQg6ZbRFMr2f0V/nGtn3Cm1mW2Qb9bVs7YIG3VAGw+KgDMf4El8cGtQ38eh7Ubf6dA46kHoO2OWGGwyYA4iQ7R1L/Ko/zh46EhfmCQOoRvoeBHp/mlYeJPoivju/5J0sqFoA+KHd016OYJXQBfnKAAkBqFSypELqEKFMhKuLEl/TH/1IHCT9mTE/2hgDEex3hiJSKUdrNt32bLgLlw3j6NKIArIjDv7ow9dGMcAaiiu482UjxLcpKiNoiKnZGrOupi3RMFVU/XvRk3+1DiZrKEzRdkpOvvQi0+k08MwDflYdwg3QgH6JiLA=="
+    },
+    {
+      "timestamp": "2025-10-17T10:46:40.411118",
+      "remetente": "Ana",
+      "destinatario": "Fernando",
+      "tipo": "enviada",
+      "mensagem_criptografada": "1E630ABC207E47C8:784DB42F33E7CE5D",
+      "chave_sessao_utilizada": "FCEFA7C5481795167CB1BD5D2F83D8B7",
+      "chave_rsa_criptografada": "U3Tdf/vHUpgR2ETZR01CMUu1c9b2MMtMq3bTDfSx5M4NgV5CKScBgVt75zjq6o+rHC8trR1ZxZKz6TePiFzTPQz4NDq9O7k7lSYEyxSy2WhGKaCQRLu023numaGBYnWmPktkITbAX1QwelVEJwbT4VnOmqk8VfgceQCOrXxFGFSlKUzfM39sgs8Y50haqT2jeUrtbtMHaZkRZg5J6dBUrQr/Q5S0Jf+aWZg+xK0hB6MkQ52NupK7U2Z5oy/NlvlmJZfZkACqR39JYoT6gciYvhlqYUT1FdapRWyBcU9/PlwWwkFPGJtuKxh/P6y3DgdoUqX0cwfpyqUXUyiMKsaGZQ=="
+    },
+    {
+      "timestamp": "2025-10-17T10:46:49.294410",
+      "remetente": "Ana",
+      "destinatario": "Fernando",
+      "tipo": "enviada",
+      "mensagem_criptografada": "C8890BFA736E2CE0FC3C8465FFDB9EF3:CED408B1804D2821",
+      "chave_sessao_utilizada": "D1CC80AAA93EC75C8F0162CC5C9773AA",
+      "chave_rsa_criptografada": "oOfE8vAWSPEotM3rYxXsGFJhrHDrRLQ5odRL+OsJmQQLFWrwTeCSxK6rbYCs6lkSlRHNxds6H8+twuoEHPp80Qz658xPChYmRmAF1RtXdVzwDCEBX+jzRwOJHu4e6fAt96s9fTcAuGpSNNNq71mj4DgmlF80lqFKTm6wEZ81Mqr/jmZQtaa5wORNDFCwRpZRDvPSe9TmIlZ6c2wbvKdKfJOb6Tixv42DT2A9EimVM2AjPgWUIv2wV3KHQbqO27j2AH9dH9ABfiXzavisl2SG/K39l8+ophzxebItrIB9aOAi8r370jy0cGqryu4PdrMXBxwChpsQyBFoF/Twg+M39g=="
+    },
+    {
+      "timestamp": "2025-10-17T10:58:13.769929",
+      "remetente": "Ana",
+      "destinatario": "Fernando",
+      "tipo": "enviada",
+      "mensagem_criptografada": "7E37086C188C2252:9FA15455BA67CB45",
+      "chave_sessao_utilizada": "2A7C3C7EA334AD5373352C5DFC493E7E",
+      "chave_rsa_criptografada": "bIty6nh9aeQHbguPFdoZPD/F9kfALWsHrQVHZfcyvUQTGZRUxu9xisxcMJEgSRZZJp+HezP4kOV9rq+r/j0ibZnlekJGiDOH/8omkUtTKHsZIsNKabvM7Rl7kmYPbPGViPkt9tpBGh+//uX68uuwouGeJeCEwwIJctfzIWA8QvjSdpYawUntVDDYHGyruNRapPv1iCduItjBKoNYByeYY9I1XkDUmdOZzg55G88va387k902NFXfA2W8yPKKtSz4f5Z0TK4Y6FpfnV/mOGCUkPA272YQUZw5wQezK6axi9+3drymwR7InwmXMXz0MfQa61IyBfl76DeNVPXXHPp5yA=="
+    },
+    {
+      "timestamp": "2025-10-17T10:58:20.066814",
+      "remetente": "Ana",
+      "destinatario": "Fernando",
+      "tipo": "enviada",
+      "mensagem_criptografada": "805B94686BD7BCDCCD6FF0B40706F683E4E2C0A69D633CEC:446DCFF90F771047",
+      "chave_sessao_utilizada": "D597ABC6346F0C85585A07FBA9DB2B6B",
+      "chave_rsa_criptografada": "IZG96KNLcN17ikeRQoWoVMOp4oOpQPSACvwBrHfTw4iN0Tl3dnSpsI+uHLaxH0rhxXghzgbVLGxlyeKoX76SfS9s9XLOCrMak/GM0uinRNSVZWoDKHe7oHaE2OhsGV38IBLklyHdhEVUO7MENGVq2Q0kh0ByJk87NsnbwBKflyTVfFyy6GnBlXefwWkXDvlm2vqIW8cygYBMqBMlWT9dUi1j+7VYqB2B7JscJmyxh35+yMx2e0oNkZmbwzkOKjL3RqbktqCuU2ksR/hyrSowU++8NpWg0tOQtTZOQTm/40FawHRW20MgSI5uv5Ae8vSnPBT5SUi/6Ol6B8zFQuc4qA=="
+    },
+    {
+      "timestamp": "2025-10-17T11:19:47.216375",
+      "remetente": "Ana",
+      "destinatario": "Fernando",
+      "tipo": "enviada",
+      "mensagem_criptografada": "B65FBB25A2D2B6FFB20072507D8BE90D870F3E79E6A3FF95:665FFD252CA1EF42",
+      "chave_sessao_utilizada": "5448318ED8C22CBBE83939E001ABDCB7",
+      "chave_rsa_criptografada": "ZjOqi2mcslL81Nej4/RdrsFVWgO+SKakCGdI+zpQt2142xUPhc8STkCO/gh/r42oeHTsHBaf2wt3rmevyZQzhimvAoK4YqLXy4j4ZQ3bRV+fE8xUGFbwn/SIVgvMmSXFbb7BPMZ507bKIhYZkWqjffA5OIetgb5Ljgum+8UrZ79Uw9zLapf6D428rvm6rRuTgzUMlKPciFaQj4W6rZAqmcYzCb93Wp6KOg3Bs6wKNpok5czlBCaXUJuTeOR81Uaf7H4o1HicrPxO5ikBuWaM7XDIInjWYyNerRV4I9MjDvG1hfE0mYFZ2RS3ssQIYv09gVikuueKfZTtIFia6s2FJA=="
+    },
+    {
+      "timestamp": "2025-10-17T11:26:00.161767",
+      "remetente": "Ana",
+      "destinatario": "Fernando",
+      "tipo": "enviada",
+      "mensagem_criptografada": "B47374682756A2C8:2B51A7838835BA21",
+      "chave_sessao_utilizada": "9A67565109B528AE0991A62F6EA58F50",
+      "chave_rsa_criptografada": "vg1vgMtiGTA/Y7mbEPC2grMnfCZJJbwN7njcTXA0D8gkJK3v6rbm5gqJtM3mgBcAGttAXTzBEyvT/pEvqZNTtj/uoSthkSGJsl/4qY3yKiSzI0fPaaaeYno/whOLpRIPFVLn/jHdc0p5E2YitjZKvAQXs7Eiv7fPQeqepOxYC2BZ5K0lGbcMlo8Yg3aoaurO43qlXX/Tu1ptv+HpXEn2L1rucPkNxnn7HaDsgY2+8lE7kEvcIpz2A+1lNrL7/mys1JjcyY1FX70nNmMIDiHbOgkbcsyMRjqlecbguY+Xj8RYWXl5XTsxvj3V9o55Tx19oQVFF1iKTtNakJkzFDSQpQ=="
+    },
+    {
+      "timestamp": "2025-10-17T11:26:10.870319",
+      "remetente": "Ana",
+      "destinatario": "Fernando",
+      "tipo": "enviada",
+      "mensagem_criptografada": "421347B9C94C7B46:89F4BE7D748D71F4",
+      "chave_sessao_utilizada": "A3113288B22644B46617F60CEB03D5E4",
+      "chave_rsa_criptografada": "TWe5/PA08E5ph4nj563FW2Cy4DXwt8ZkA3H8uEw23GKhb9KEZQa5qpT9Ho4h/mEfgQJRv9SJq1ggRxc3jK99cCjopW34R4MegfTix84fX616qd09B/4Mqga2a/1tma+Z9j5+oeSb9e4iMxM9pHTZdjvzY0cdTVmYcAxtMr+gNpOqYe/5eMWt2apED66auFSivUQlvLUR1piFaYEv6xy/5TC8e3cB23klrg9O3isbKzEwmcwpg64w3O2c/JeBu6db2+rjB6kdm+zEjirIaF43cixKzUPujbmKfnHJU6SiFxm7pxW94/bsg3UwfJvUcZkZ8wvYp6jvZvKngJR3/XgB1Q=="
+    },
+    {
+      "timestamp": "2025-10-17T11:35:31.592518",
+      "remetente": "Ana",
+      "destinatario": "Fernando",
+      "tipo": "enviada",
+      "mensagem_original": "AAAAAAAAAAAAAAAAAAAD",
+      "mensagem_criptografada": "B2CE156446C7C618E2584A0056483CCCCE38D5BCA9B46C51:01B6AEFBC5F96457",
+      "chave_sessao_utilizada": "498E7E69D3C0664659A8504632C1B236",
+      "chave_rsa_criptografada": "fcYy2vbMRfsFBqA24N/iADLjLZ5s3s/DSnOnhXewaYhw/eoW5e8dp2kB3+nKBB24efaYR3zmYHGV1ANsE3uJqrfcJF6Z5+S6pLtze9IXjVRE5j3jHSlpTnVpE3XZsDsol/dHQM7tysA5kBaQobJaSOsbpyh74AIr/kCeSthO/VQKN3s0IWrLQUnZaG2roh/u3ogMfd5B9Th7HQN4g4iO+zXsUFl6y8tNHBNflJxxorPtcdX3HQHJZEXSB3T7pMR9e1crXx61NQ/aHhhsdSEYwM9UaXCe2J0XmkGazkpsVHvzHVNDoOxLsuxij9FByPOD+5uUxz9LdbTK9r+dTPY6Nw=="
+    },
+    {
+      "timestamp": "2025-10-17T11:37:05.676364",
+      "remetente": "Ana",
+      "destinatario": "Fernando",
+      "tipo": "enviada",
+      "mensagem_criptografada": "618E2D4A4A4B6654C78B228FCFD57683:B480F7FE1D3AE8A7",
+      "chave_sessao_utilizada": "E453E5494BA1803A5E548DFA17FE5A42",
+      "chave_rsa_criptografada": "i2QCXMPd+OY9gQZUhqrozjVwZPiJQqtFk7Ukseo24fwmujjQR0+j/BbgH7d18uN2tcwY4rgV0psXLOWIW9vpEXUlmICizR4LEj3ZuR1v+1+w8R3eI7DhmV5lQfJZ2kGrEtL39UISZGIMhn3Z/TT1n0g5OQhAtZ24quZx/B5f1yF3swx5YHK/XWWsxhiiMIeyLuhl33Yl7ZaOFz4OYjJT1dqb/9yZxD/PvKG69xBQdy9jJLxWFVp1hAWWAUzwAvJ+awcOdBmd9Ic43MTsqsY6dxFLclCzB47S7IcO1BKXS3RSAjlpAJNlA81WMufGtjwDQLvtXyQW/Xuk8Um9rdlE5w=="
+    },
+    {
+      "timestamp": "2025-10-17T11:37:12.598088",
+      "remetente": "Ana",
+      "destinatario": "Fernando",
+      "tipo": "enviada",
+      "mensagem_criptografada": "031B8400BE7C795F5D59041EDBC8DC6D:D1532DC28379FFF5",
+      "chave_sessao_utilizada": "F773C1A78CA7535787B6F913E5BA1D81",
+      "chave_rsa_criptografada": "OI9Azl59jaQjeBRUZbjfkTtg6wDsvF98yv/35+fdhgsqt8DyzUubyi7E+Q63eGoQ6i/zTfptpAWUiIWQIpgeGgjF0OGpiaL2LsumPy3RUd6VibYp2+KHOCnGvVPU4mVQxEYUIZnDNdxtT5+kmtK+lOSDPjaufdtW7Mj3bVxVS7guQqgC103kJg4vccMqTtzyOM/dX7edG1haIX9wuu3pHSUpwGUvtarz63PABJVC+kx69ulpz5p2P7RelIp2BpS0Tj1ajSKuGR1IEB9A6jcQU91GtD9E/2olZ492Og+/6AUzqnkTul72HxcDgj2WlHDgYik4UTHu6pO02ES5dvID8w=="
+    }
+  ],
+  "Fernando_Ana": [
+    {
+      "timestamp": "2025-10-17T10:10:19.110820",
+      "remetente": "Fernando",
+      "destinatario": "Ana",
+      "tipo": "enviada",
+      "mensagem_original": "TA TUDO BEM ANA, NAO PRECISA SE PREOCUPAR",
+      "mensagem_criptografada": "4B43E11FF2DCB84892CCF9CFC030B5D3FB972139EBC0A77FA486E2E571F0A63E66E7DC9D2A25E5274AB471710AAA4E85:4900D537833DDA77",
+      "chave_sessao_utilizada": "CA54E5C7A03F42EE2C4EAC1F3A1B5B75"
+    },
+    {
+      "timestamp": "2025-10-17T10:31:57.087658",
+      "remetente": "Fernando",
+      "destinatario": "Ana",
+      "tipo": "enviada",
+      "mensagem_criptografada": "BF9B029D703A6861BB730BA8B083C41E:09122AE7E4C107A1",
+      "chave_sessao_utilizada": "DD453F2F0A3CFAC46590DF30DD48DDAF",
+      "chave_rsa_criptografada": "eCCfX4bysrVg0t2gZ2qWgKoI9f+vPqvFxduHG1qYJvzdbCYOV3hqDvELjM/wcKl6l95A8NfxHmYFCUDCirdZqOR384slD8b7t7nGUFUaVt+V40THAPO5AoQfsBnMzy/h3OyBL2xhlSl+WWaaRz4TjftY47ZirI5v7BooCiJGqvcntTY7FcEwN1jKBvR1mDdEuF4zD21ENue6xvCjEwL8CJgpDyjGXh2L28fC252iLIPFFB1Sr4XNJM/aECkKwA60MCgIiVm09uDv9j+pJX/fafbKK0ieBXTKN8sUHiszkmofg9sWNtZKPwLx/ePWVbVMB30IfMlGvjFWraU1ZOzz1Q=="
+    },
+    {
+      "timestamp": "2025-10-17T10:39:11.290532",
+      "remetente": "Fernando",
+      "destinatario": "Ana",
+      "tipo": "enviada",
+      "mensagem_criptografada": "E2A44E2120889FC17D50266B614489B2:C90E6FA6D91589B9",
+      "chave_sessao_utilizada": "7F973BAA7B95F1EA944341B841F1922E",
+      "chave_rsa_criptografada": "S9rlJ27csQRfrSoiStrtql/QtVATf49uoNFe0xpm3xOiLT/e/awVICzG/kRNw2ESsaW4uXFHXHeui/O/6HOViFPNvYsV98d0yQFVAKs6pLkPbGxO67+MI5p7OwYi2V7pwtoe/1sWpZtEL3Wltnfk6cHkukbqtiREXXcZm1rxw7TojhFl1JqNX2FbnvDQt0+gdaOIM9ZvBIezR2Knf+sRffHY6NCvlUcnYOEDmZR1SbngVzJvlb3FuuxpBAi0L83252wKPL73mtjOr8iFwfLrvXLRyIEtXnEls/XXsxd9IXoujnyXG7/Y5mRf0t7BqrqtEp1cXDH7liZGyRPlT0akdg=="
+    },
+    {
+      "timestamp": "2025-10-17T11:20:29.755229",
+      "remetente": "Fernando",
+      "destinatario": "Ana",
+      "tipo": "enviada",
+      "mensagem_criptografada": "C5F7F61147704BEC9E28F1817B5C571B:EC3484514810CC80",
+      "chave_sessao_utilizada": "D5D6EDBF9CD55978B77AA553AEB58226",
+      "chave_rsa_criptografada": "sFDT8owtK4yXjtHIQnt065GLMvvgSY2Mz+WPY82I50S/YP/fdlEjBaJDhxDtmAQyqOeuV8pmka/w6cevgCoVFN/eTy1qnmvr+ugI/Y0ryF96C53wGcH18KS3aEg5CQ1lncuC0dnNY7Ihz3bcqo3Puc5vQ6DM8OJ5P8PD2ikqxrl1tz2Doy0g01PxB8S/vhZbQGvnb17u70UInhHmyoQCprKuWy5mbIaTX39s7zQLancU38AKbhQq/OZuT5yhcvWI2V+3Oc2oMrd96AaCsC8AT909Lv2vnygYYpE4/o/Hw4ra0JElERJAKzvI8Pq18TVr86zO+PWi1725dPSpX/Dkvw=="
+    },
+    {
+      "timestamp": "2025-10-17T11:27:09.397487",
+      "remetente": "Fernando",
+      "destinatario": "Ana",
+      "tipo": "enviada",
+      "mensagem_criptografada": "D6B93C9ABDB8BBA3937E9F76FF3AFE3138A534FF77555B046B5419B9284B2C85:32EB226FE5A9EB78",
+      "chave_sessao_utilizada": "04EBAA09220597A9423A2630B79D10C4",
+      "chave_rsa_criptografada": "Kt0JiMW7SwHqg5MzwQfGBSK5EoXkinRxkkBVn4MBpXMjHL7+FOaJIG/GxDDIBTrcEXSvWoyt1Wo1hxb61Ob9LtM7jM6q0dWQEIE+rgDjdq8Rn9w0Q05gThoCK8gWEt3cl4C4n5wqcDTeZVvTfm/sR/X5PkxTDFgLtDj9T+H8pbgykGVXhkgJmSiLLMHCEgM7P7/93kxAsjWLMQmN/Mov/E9iVBuf6rduMs3+zVatlJeLSiDzTQLC75xmkwxZ26dRTZzLYrwENzA39aR3LJ/t58tbPGRh0TlE/X6AeqiD84K3oQPRyQmW0wRE6FJq2SceLrY/oepS2GdcGSq6el7DLw=="
+    },
+    {
+      "timestamp": "2025-10-17T11:37:27.821145",
+      "remetente": "Fernando",
+      "destinatario": "Ana",
+      "tipo": "enviada",
+      "mensagem_criptografada": "C2484EB5392996F1A46F0DD67A0674DA97579D5610364BF0:C65074D4EA6F6376",
+      "chave_sessao_utilizada": "7249DEE2EB9DED94ED6C882BD564A23F",
+      "chave_rsa_criptografada": "03GRlje9SZJFH4foCyaUYlK7L5OrWUjO+YoO7w+tunnH8BkpI1ZUeSzgbPeT30ThXX8uFP2Fb82lCqjeRoebC+ExXk6qtWeIaI4yRSf3nk+826Fjpgol6uDlmAofKoasuHEivwMyML0uvpVncljloVT/eQD9aTn77BlvxqgaHd5P0xqVtPAUarartm74jctJRjfl2bzmiWpoHHA3evIMH5HYBe4BIbsz/c/rl9pRmIcCJ2rQwu9FHXCVAmFBZDBsxS25II5YMaXBQma9w3Bhqszkq8BtzSPpA8Q7ru2wlOHExNobVVifFbmGjQkms78JEshN2fYC3X/iL5fpK97jBQ=="
+    }
+  ],
+  "Ana_Desconhecido": [
+    {
+      "timestamp": "2025-10-17T10:14:33.667268",
+      "remetente": "Desconhecido",
+      "destinatario": "Ana",
+      "tipo": "recebida",
+      "mensagem_original": null,
+      "mensagem_criptografada": "4B43E11FF2DCB84892CCF9CFC030B5D3FB972139EBC0A77FA486E2E571F0A63E66E7DC9D2A25E5274AB471710AAA4E85:4900D537833DDA77",
+      "chave_sessao_utilizada": "CA54E5C7A03F42EE2C4EAC1F3A1B5B75"
+    }
+  ],
+  "Ana_Juliana": [
+    {
+      "timestamp": "2025-10-17T11:11:23.090930",
+      "remetente": "Ana",
+      "destinatario": "Juliana",
+      "tipo": "enviada",
+      "mensagem_criptografada": "2D181A6C4F84B9837CE5203C945CF104:BFE15BA9585EE533",
+      "chave_sessao_utilizada": "186A2D0CDC7A412EBA7216CA3737C64B",
+      "chave_rsa_criptografada": "nMIYyN0zO/kc9DJ9eXDLo6Hy48/yml0j1JAvpxR8l62C0SEDGJqQoR48nWSzniZYg39S28s/viMi1Tne5geEDvgzuUOGaO67B7MqfdBGJP7fJXbnt/AZShDD+F7djpbnKZUvKWyF6j6Yz4OnsYrleMsYj/76bH3R0byPVKcKwr0k0mSDwgsmjEbr9yAyI7jJDQprDZWHSvlyt0RphNNTdZ70JFxXl9sYkKwsoj+hExo6nNKOMKHDm+LN4Cw26i8sWiguUxqA8NwX82Ci2iJakEA+w7ztLqmjPFNxXOfk23lOFEqFggS5djkb9K/fXslj+mLSQ0qjsRTdWaaQIGu6Bw=="
+    }
+  ],
+  "Juliana_Ana": [
+    {
+      "timestamp": "2025-10-17T11:11:53.014783",
+      "remetente": "Juliana",
+      "destinatario": "Ana",
+      "tipo": "enviada",
+      "mensagem_criptografada": "9274C7A4ECD4DD2DEA19883BA02393ABDFCA260F1E89A9FB:AF30E3846FD745A1",
+      "chave_sessao_utilizada": "9938D571C29E30B97D23189E5540780F",
+      "chave_rsa_criptografada": "0HK2iXaHbW3PQRdvt0FaGTgCB6jLJvkq1VxXLIxvLoB9YhO1Qw/hk8AwNbsAdmZVwvl8bNeezsMQxGcUER0k1pE0o9rDfcEoPFFeqtGxNxURv7zUlR7oBZoO+3bAj7Olwz+Q8eajKCgxwbzaUo4nhrkxr2QN3v6MSRHybG9p70+JiLIEaqwMg7kdw28UGhyD8CRG5c0V4gyc4JFATmDUsr9txQ83gTs7+aaf6wET26QWhPXl+z+ivlBd6BV/PYpWtq/sv3+EdPL6keU0W4t7n83bi6d0aPFJ8SeJC1NQykxVpDQyyOVkxh4UKcQMTSXubZaSYOoI3DKBupGI01QzlA=="
+    }
+  ]
+}

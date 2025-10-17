@@ -1,0 +1,57 @@
+{
+  "LUDUS": {
+    "admin": "Ana",
+    "membros": [
+      "Ana",
+      "Fernando",
+      "Juliana",
+      "Marcelo"
+    ],
+    "chave_grupo_hex": "5FA16CB9E871E302EDE92372697F2377",
+    "ativo": true,
+    "historico_mensagens": [
+      {
+        "remetente": "Ana",
+        "timestamp": "2025-10-17T09:53:53.568387",
+        "mensagem_cripto": "7A6F240921203BDB44DB5CCEE510EE57909DD475A33E7BAE:586293509F2D287B",
+        "chave_utilizada": "5FA16CB9E871E302EDE92372697F2377"
+      },
+      {
+        "remetente": "Ana",
+        "timestamp": "2025-10-17T09:54:04.793442",
+        "mensagem_cripto": "D6F4A8963AA5400FD281A6E7F5B1406B:7D457C66C7EFDA82",
+        "chave_utilizada": "5FA16CB9E871E302EDE92372697F2377"
+      },
+      {
+        "remetente": "Fernando",
+        "timestamp": "2025-10-17T09:56:26.227756",
+        "mensagem_cripto": "0EFC8B267D1092C1813F06D8C052EFC6A863B5811E2975D78DD9947F8A137330:63C5AF615005D46D",
+        "chave_utilizada": "5FA16CB9E871E302EDE92372697F2377"
+      },
+      {
+        "remetente": "Ana",
+        "timestamp": "2025-10-17T11:00:53.762643",
+        "mensagem_cripto": "0195ABA120E3CF987C13B8E1795192B5:46A9482262B7F529",
+        "chave_utilizada": "5FA16CB9E871E302EDE92372697F2377"
+      },
+      {
+        "remetente": "Fernando",
+        "timestamp": "2025-10-17T11:01:41.292958",
+        "mensagem_cripto": "50935847D7A98359C6A4313D385212E5A448FDF6B05CDDFA:981AC34209915E67",
+        "chave_utilizada": "5FA16CB9E871E302EDE92372697F2377"
+      },
+      {
+        "remetente": "Ana",
+        "timestamp": "2025-10-17T11:15:47.937603",
+        "mensagem_cripto": "B1A6C306E86D93983901EE3A471B0A09:FFD527C71C16D553",
+        "chave_utilizada": "5FA16CB9E871E302EDE92372697F2377"
+      },
+      {
+        "remetente": "Fernando",
+        "timestamp": "2025-10-17T11:16:25.598801",
+        "mensagem_cripto": "3C618C0A0EC835B24290F1DFEF35F193CF66C10A0AA095B6:EBCC2BAAF13C9DB2",
+        "chave_utilizada": "5FA16CB9E871E302EDE92372697F2377"
+      }
+    ]
+  }
+}
