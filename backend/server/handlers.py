@@ -176,52 +176,75 @@ async def handle_list_users(db: Session, writer, message: dict, online_users: Di
 # ======================================================
 # ENVIO DE MENSAGEM PRIVADA
 # ======================================================
-async def handle_send_message(db: Session, message: dict, online_users: Dict[str, asyncio.StreamWriter]):
-    """Envia ou armazena uma mensagem privada (E2EE)."""
+# ======================================================
+# 💌 ENVIO DE MENSAGEM PRIVADA (robusto e seguro)
+# ======================================================
+async def handle_send_message(db: Session, data: dict, online_users: Dict[str, asyncio.StreamWriter]):
+    """
+    Envia mensagens criptografadas entre usuários, garantindo que:
+    - o token seja válido
+    - o destinatário exista
+    - o socket esteja ativo antes do envio
+    - mensagens offline sejam armazenadas no banco
+    """
+    sender_token = data.get("token")
+    receiver_name = data.get("to")
+    content_encrypted = data.get("content_encrypted")
+    key_encrypted = data.get("key_encrypted")
+
     try:
-        token = message.get("token")
-        sender = verify_access_token(token)
-        receiver = message.get("to")
-        encrypted_content = message.get("content_encrypted")
-        encrypted_key = message.get("key_encrypted")
-
-        if not all([sender, receiver, encrypted_content, encrypted_key]):
-            log.warning(f"[SEND_FAIL] Campos ausentes em mensagem de {sender}")
+        # 🔒 Autentica o remetente via token JWT
+        sender_username = verify_access_token(sender_token)
+        if not sender_username:
+            log.error("[SEND_ERROR] Token inválido.")
             return
 
-        sender_user = db.query(User).filter(User.username == sender).first()
-        receiver_user = db.query(User).filter(User.username == receiver).first()
-        if not receiver_user:
-            log.error(f"[SEND_FAIL] Destinatário {receiver} não encontrado.")
+        # ⚙️ Validação de campos
+        if not receiver_name or not content_encrypted:
+            log.warning(f"[SEND_FAIL] Campos ausentes em mensagem de {sender_username}")
             return
 
-        payload = {
-            "from": sender,
-            "content_encrypted": encrypted_content,
-            "key_encrypted": encrypted_key,
-            "timestamp": datetime.datetime.utcnow().isoformat(),
-        }
+        # 🔍 Busca remetente e destinatário no banco
+        sender_user = db.query(User).filter_by(username=sender_username).first()
+        receiver_user = db.query(User).filter_by(username=receiver_name).first()
 
-        async with USERS_LOCK:
-            if receiver in online_users:
-                dest_writer = online_users[receiver]
-                dest_writer.write((json.dumps(payload) + "\n").encode())
-                await dest_writer.drain()
-                log.info(f"[DELIVERED] {sender} → {receiver}")
-            else:
-                msg = Message(
-                    sender_id=sender_user.id,
-                    receiver_id=receiver_user.id,
-                    content_encrypted=encrypted_content,
-                    key_encrypted=encrypted_key,
-                )
-                db.add(msg)
-                db.commit()
-                log.info(f"[STORED] {receiver} offline. Mensagem armazenada.")
+        if not sender_user or not receiver_user:
+            log.warning(f"[SEND_FAIL] Usuário inexistente: {receiver_name}")
+            return
+
+        # 💾 Sempre salva a mensagem no banco (garantia de histórico)
+        msg = Message(
+            sender_id=sender_user.id,
+            receiver_id=receiver_user.id,
+            content_encrypted=content_encrypted,
+            key_encrypted=key_encrypted,
+        )
+        db.add(msg)
+        db.commit()
+
+        # 🔄 Verifica se o destinatário está online
+        receiver_writer = online_users.get(receiver_name)
+
+        if receiver_writer and not receiver_writer.is_closing():
+            try:
+                payload = {
+                    "from": sender_username,
+                    "to": receiver_name,
+                    "content_encrypted": content_encrypted,
+                    "timestamp": datetime.datetime.utcnow().isoformat(),
+                }
+                receiver_writer.write((json.dumps(payload) + "\n").encode("utf-8"))
+                await receiver_writer.drain()
+                log.info(f"[SEND_OK] {sender_username} → {receiver_name}")
+            except Exception as e:
+                log.error(f"[SEND_ERROR] Falha ao enviar para {receiver_name}: {e}")
+                # Se o socket fechou, remove da lista
+                online_users.pop(receiver_name, None)
+        else:
+            log.warning(f"[SEND_WARN] {receiver_name} está offline. Mensagem armazenada no banco.")
 
     except Exception as e:
         log.error(f"[SEND_ERROR] Falha ao enviar mensagem privada: {e}")
-
 
 # ======================================================
 # ENVIO DE MENSAGEM EM GRUPO
