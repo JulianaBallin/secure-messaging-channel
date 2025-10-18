@@ -8,54 +8,103 @@ Ouvinte assíncrono persistente para recepção de mensagens em tempo real no Ci
 - Salva localmente todas as mensagens recebidas como JSON
 """
 
-import asyncio
-import json
-import os
+import socket
 import ssl
-from datetime import datetime
+import json
+import time
+import threading
+from queue import Queue
+from backend.utils.logger_config import get_logger
 
-os.makedirs("messages", exist_ok=True)
+logger = get_logger("messages_logger")
 
 
-async def start_listener(username: str, token: str, host: str, port: int):
-    """Mantém conexão segura para receber mensagens em tempo real."""
-    ssl_context = ssl.create_default_context()
-    ssl_context.check_hostname = False
-    ssl_context.verify_mode = ssl.CERT_NONE
+def start_listener_with_reconnect(
+    host: str,
+    port: int,
+    retry_delay: int = 5,
+    msg_queue: Queue = None,
+):
+    """
+    Inicia o listener com reconexão automática e suporte a fila de mensagens.
 
-    print(f"📡 Aguardando novas mensagens para {username}...\n")
+    Args:
+        host (str): endereço do servidor
+        port (int): porta do servidor
+        retry_delay (int): tempo entre tentativas de reconexão
+        msg_queue (Queue): fila opcional para envio de mensagens à interface
+    """
+    while True:
+        try:
+            logger.info(f"🔌 Conectando ao servidor TLS {host}:{port}...")
+            start_listener(host, port, msg_queue)
+        except Exception as e:
+            logger.error(f"Erro no listener: {e}. Tentando reconectar em {retry_delay}s...")
+            time.sleep(retry_delay)
 
-    try:
-        reader, writer = await asyncio.open_connection(host, port, ssl=ssl_context)
 
-        # Sessão persistente via JWT
-        init_payload = {"action": "resume_session", "token": token}
-        writer.write((json.dumps(init_payload) + "\n").encode("utf-8"))
-        await writer.drain()
+def start_listener(host: str, port: int, msg_queue: Queue = None):
+    """
+    Inicia o listener e recebe mensagens do servidor via TLS.
+    Cada mensagem recebida é enviada à fila `msg_queue` (se fornecida).
+    """
+    context = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
 
-        while True:
-            data = await reader.readline()
-            if not data:
-                await asyncio.sleep(0.5)
-                continue
+    with socket.create_connection((host, port)) as sock:
+        with context.wrap_socket(sock, server_hostname=host) as ssock:
+            logger.info("🔒 Conexão TLS estabelecida. Aguardando mensagens...")
+            while True:
+                try:
+                    data = ssock.recv(4096)
+                    if not data:
+                        logger.warning("⚠️ Conexão encerrada pelo servidor.")
+                        break
 
-            try:
-                msg = json.loads(data.decode().strip())
+                    try:
+                        message_data = json.loads(data.decode("utf-8"))
+                        sender = message_data.get("from") or message_data.get("sender", "Desconhecido")
+                        body = message_data.get("body") or message_data.get("message", "")
+                    except json.JSONDecodeError:
+                        sender, body = "Servidor", data.decode("utf-8", errors="ignore")
 
-                if not isinstance(msg, dict) or "from" not in msg:
-                    continue
+                    logger.info(f"📨 Mensagem recebida de {sender}: {body}")
 
-                sender = msg.get("from", "?")
-                timestamp = msg.get("timestamp", datetime.utcnow().isoformat())
+                    # Envia para a fila da UI
+                    if msg_queue:
+                        msg_queue.put({"from": sender, "body": body})
 
-                filename = f"messages/{username}_{sender}_{timestamp.replace(':', '-')}.json"
-                with open(filename, "w", encoding="utf-8") as f:
-                    json.dump(msg, f, indent=4)
+                except (socket.error, ssl.SSLError) as e:
+                    logger.error(f"Erro de conexão: {e}")
+                    break
+                except Exception as e:
+                    logger.error(f"Erro inesperado no listener: {e}")
+                    break
 
-                print(f"📩 Nova mensagem recebida de {sender} ({timestamp})")
 
-            except json.JSONDecodeError:
-                print(f"⚠️ Pacote recebido inválido (não é JSON).")
+def run_listener_thread(host="127.0.0.1", port=9000, msg_queue=None):
+    """
+    Inicia o listener em uma thread separada.
+    """
+    t = threading.Thread(
+        target=start_listener_with_reconnect,
+        args=(host, port, 5, msg_queue),
+        daemon=True,
+    )
+    t.start()
+    logger.info("🧵 Listener iniciado em thread.")
+    return t
 
-    except Exception as e:
-        print(f"💥 Listener encerrado: {e}")
+
+if __name__ == "__main__":
+    # Execução direta para teste isolado
+    q = Queue()
+    threading.Thread(target=start_listener_with_reconnect, args=("127.0.0.1", 9000, 5, q), daemon=True).start()
+
+    # Exemplo de consumo local da fila
+    while True:
+        while not q.empty():
+            msg = q.get()
+            print(f"[UI] Nova mensagem: {msg['from']}: {msg['body']}")
+        time.sleep(1)

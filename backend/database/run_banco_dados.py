@@ -26,6 +26,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 from backend.database.connection import SessionLocal, Base, engine
 from backend.database.queries import users, groups, members, messages
 from backend.utils.logger_config import database_logger as dblog
+print(type(dblog))
 
 manaus_tz = timezone(timedelta(hours=-4))
 db = SessionLocal()

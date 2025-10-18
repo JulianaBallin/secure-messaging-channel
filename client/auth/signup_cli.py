@@ -19,6 +19,7 @@ from base64 import b64encode
 from getpass import getpass
 from dotenv import load_dotenv
 
+
 # ----------------------------
 # Garantir import global
 # ----------------------------
@@ -31,7 +32,7 @@ from backend.crypto.rsa_manager import RSAManager
 # -----------------------------
 load_dotenv()
 HOST = os.getenv("SERVER_HOST", "127.0.0.1")
-PORT = int(os.getenv("SERVER_PORT", "8888"))
+PORT = int(os.getenv("SERVER_PORT", "8000"))
 
 # Criar pastas necessárias
 os.makedirs("keys", exist_ok=True)
@@ -69,8 +70,8 @@ async def register_user_tls():
         print("❌ Nome de usuário inválido. Use apenas letras, números e '_'.")
         return
 
-    password = getpass("🔑 Crie uma senha: ")
-    confirm = getpass("🔁 Confirme a senha: ")
+    password = input("🔑 Crie uma senha: ")
+    confirm = input("🔁 Confirme a senha: ")
 
     if password != confirm:
         print("❌ As senhas não coincidem.")

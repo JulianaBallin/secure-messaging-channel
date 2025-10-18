@@ -186,7 +186,7 @@ seguindo boas práticas de SQLAlchemy, logging e arquitetura modular integrada a
 ---
 
 
-## 💬 Pessoa 4 — Interface CLI e Experiência do Usuário
+## 💬 Pessoa 4 — Interface CLI e Experiência do Usuário (Ana Bia)
 
 ### 🧱 Caminhos e status
 

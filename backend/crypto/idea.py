@@ -12,20 +12,20 @@ class IDEA:
         if chave is None:
             chave = self.gerar_chave_aleatoria()
         else:
-            crypto_logger.logger.info(f"Chave de sessão fornecida: {hex(chave)[2:].upper().zfill(32)}")
+            crypto_logger.info(f"Chave de sessão fornecida: {hex(chave)[2:].upper().zfill(32)}")
         
         self.chave_sessao = chave  
         self.gerar_chaves(chave)
         
         # LOG: Inicialização do IDEA
-        crypto_logger.logger.info("=== INICIALIZAÇÃO IDEA ===")
-        crypto_logger.logger.info(f"Chave de Sessão: {self.get_chave_sessao_hex()}")
-        crypto_logger.logger.info("=" * 50)
+        crypto_logger.info("=== INICIALIZAÇÃO IDEA ===")
+        crypto_logger.info(f"Chave de Sessão: {self.get_chave_sessao_hex()}")
+        crypto_logger.info("=" * 50)
 
     def gerar_chave_aleatoria(self) -> int:
         # Chave IDEA aleatória de 128 bits
         chave = int.from_bytes(secrets.token_bytes(16), 'big')
-        crypto_logger.logger.info(f"Chave IDEA Aleatória Gerada: {hex(chave)[2:].upper().zfill(32)}")
+        crypto_logger.info(f"Chave IDEA Aleatória Gerada: {hex(chave)[2:].upper().zfill(32)}")
         return chave
 
     def get_chave_sessao(self) -> int:
@@ -194,9 +194,9 @@ class IDEA:
         Retorna: "cifrado_hex:iv_hex"
         """
         # LOG: Início da cifração CBC
-        crypto_logger.logger.info("=== INÍCIO CRIPTOGRAFIA IDEA-CBC ===")
-        crypto_logger.logger.info(f"Texto Original: '{texto_ascii}'")
-        crypto_logger.logger.info(f"Chave de Sessão: {self.get_chave_sessao_hex()}")
+        crypto_logger.info("=== INÍCIO CRIPTOGRAFIA IDEA-CBC ===")
+        crypto_logger.info(f"Texto Original: '{texto_ascii}'")
+        crypto_logger.info(f"Chave de Sessão: {self.get_chave_sessao_hex()}")
         
         # IV aleatório 
         if iv_hex is None:
@@ -205,33 +205,33 @@ class IDEA:
         else:
             iv = bytes.fromhex(iv_hex)
         
-        crypto_logger.logger.info(f"IV Gerado: {iv_hex}")
+        crypto_logger.info(f"IV Gerado: {iv_hex}")
         
         texto_bytes = texto_ascii.encode('utf-8')
-        crypto_logger.logger.info(f"Texto em Bytes: {texto_bytes.hex().upper()}")
+        crypto_logger.info(f"Texto em Bytes: {texto_bytes.hex().upper()}")
         
         texto_com_padding = padding_pkcs7(texto_bytes)
-        crypto_logger.logger.info(f"Texto com Padding PKCS7: {texto_com_padding.hex().upper()}")
+        crypto_logger.info(f"Texto com Padding PKCS7: {texto_com_padding.hex().upper()}")
         
         blocos = [texto_com_padding[i:i+8] for i in range(0, len(texto_com_padding), 8)]
-        crypto_logger.logger.info(f"Número de Blocos: {len(blocos)}")
+        crypto_logger.info(f"Número de Blocos: {len(blocos)}")
         
         texto_cifrado_bytes = b''
         bloco_anterior = iv
         
         for i, bloco in enumerate(blocos):
-            crypto_logger.logger.info(f"--- Processando Bloco {i+1} ---")
-            crypto_logger.logger.info(f"Bloco {i+1} Original: {bloco.hex().upper()}")
+            crypto_logger.info(f"--- Processando Bloco {i+1} ---")
+            crypto_logger.info(f"Bloco {i+1} Original: {bloco.hex().upper()}")
             
             # XOR com bloco anterior (CBC)
             bloco_xor = bytes(a ^ b for a, b in zip(bloco, bloco_anterior))
-            crypto_logger.logger.info(f"Bloco {i+1} Após XOR: {bloco_xor.hex().upper()}")
+            crypto_logger.info(f"Bloco {i+1} Após XOR: {bloco_xor.hex().upper()}")
             
             # Cifra com IDEA
             bloco_int = int.from_bytes(bloco_xor, 'big')
             bloco_cifrado_int = self.cifrar(bloco_int)
             bloco_cifrado = bloco_cifrado_int.to_bytes(8, 'big')
-            crypto_logger.logger.info(f"Bloco {i+1} Criptografado: {bloco_cifrado.hex().upper()}")
+            crypto_logger.info(f"Bloco {i+1} Criptografado: {bloco_cifrado.hex().upper()}")
             
             texto_cifrado_bytes += bloco_cifrado
             bloco_anterior = bloco_cifrado
@@ -239,26 +239,26 @@ class IDEA:
         resultado = f"{texto_cifrado_bytes.hex().upper()}:{iv_hex}"
         
         # LOG: Resultado final
-        crypto_logger.logger.info("=== FIM CRIPTOGRAFIA IDEA-CBC ===")
-        crypto_logger.logger.info(f"Resultado Final: {resultado}")
-        crypto_logger.logger.info("=" * 50)
+        crypto_logger.info("=== FIM CRIPTOGRAFIA IDEA-CBC ===")
+        crypto_logger.info(f"Resultado Final: {resultado}")
+        crypto_logger.info("=" * 50)
         
         return resultado
 
     def decifrar_cbc(self, cifrado_com_iv):
         try:
             # LOG: Início da decifração CBC
-            crypto_logger.logger.info("=== INÍCIO DECRIPTOGRAFIA IDEA-CBC ===")
-            crypto_logger.logger.info(f"Entrada Completa: {cifrado_com_iv}")
-            crypto_logger.logger.info(f"Chave de Sessão: {self.get_chave_sessao_hex()}")
+            crypto_logger.info("=== INÍCIO DECRIPTOGRAFIA IDEA-CBC ===")
+            crypto_logger.info(f"Entrada Completa: {cifrado_com_iv}")
+            crypto_logger.info(f"Chave de Sessão: {self.get_chave_sessao_hex()}")
             
             # Separa cifrado e IV
             cifrado_hex, iv_hex = cifrado_com_iv.split(':')
             cifrado_bytes = bytes.fromhex(cifrado_hex)
             iv = bytes.fromhex(iv_hex)
             
-            crypto_logger.logger.info(f"IV Recebido: {iv_hex}")
-            crypto_logger.logger.info(f"Texto Cifrado: {cifrado_hex}")
+            crypto_logger.info(f"IV Recebido: {iv_hex}")
+            crypto_logger.info(f"Texto Cifrado: {cifrado_hex}")
             
             # Verifica se o tamanho é múltiplo de 8
             if len(cifrado_bytes) % 8 != 0:
@@ -266,42 +266,42 @@ class IDEA:
             
             # Divide em blocos de 8 bytes
             blocos = [cifrado_bytes[i:i+8] for i in range(0, len(cifrado_bytes), 8)]
-            crypto_logger.logger.info(f"Número de Blocos: {len(blocos)}")
+            crypto_logger.info(f"Número de Blocos: {len(blocos)}")
             
             texto_decifrado_bytes = b''
             bloco_anterior = iv
             
             for i, bloco in enumerate(blocos):
-                crypto_logger.logger.info(f"--- Processando Bloco {i+1} ---")
-                crypto_logger.logger.info(f"Bloco {i+1} Cifrado: {bloco.hex().upper()}")
+                crypto_logger.info(f"--- Processando Bloco {i+1} ---")
+                crypto_logger.info(f"Bloco {i+1} Cifrado: {bloco.hex().upper()}")
                 
                 # Decifra com IDEA
                 bloco_int = int.from_bytes(bloco, 'big')
                 bloco_decifrado_int = self.decifrar(bloco_int)
                 bloco_decifrado = bloco_decifrado_int.to_bytes(8, 'big')
-                crypto_logger.logger.info(f"Bloco {i+1} Decifrado: {bloco_decifrado.hex().upper()}")
+                crypto_logger.info(f"Bloco {i+1} Decifrado: {bloco_decifrado.hex().upper()}")
                 
                 bloco_final = bytes(a ^ b for a, b in zip(bloco_decifrado, bloco_anterior))
-                crypto_logger.logger.info(f"Bloco {i+1} Após XOR: {bloco_final.hex().upper()}")
+                crypto_logger.info(f"Bloco {i+1} Após XOR: {bloco_final.hex().upper()}")
                 
                 texto_decifrado_bytes += bloco_final
                 bloco_anterior = bloco
             
-            crypto_logger.logger.info(f"Texto com Padding: {texto_decifrado_bytes.hex().upper()}")
+            crypto_logger.info(f"Texto com Padding: {texto_decifrado_bytes.hex().upper()}")
             
             # Remove PKCS7 padding
             texto_sem_padding = remove_pkcs7(texto_decifrado_bytes)
-            crypto_logger.logger.info(f"Texto sem Padding: {texto_sem_padding.hex().upper()}")
+            crypto_logger.info(f"Texto sem Padding: {texto_sem_padding.hex().upper()}")
             
             texto_final = texto_sem_padding.decode('utf-8')
             
             # LOG: Resultado final da decifração
-            crypto_logger.logger.info("=== FIM DECRIPTOGRAFIA IDEA-CBC ===")
-            crypto_logger.logger.info(f"Texto Final Decifrado: '{texto_final}'")
-            crypto_logger.logger.info("=" * 50)
+            crypto_logger.info("=== FIM DECRIPTOGRAFIA IDEA-CBC ===")
+            crypto_logger.info(f"Texto Final Decifrado: '{texto_final}'")
+            crypto_logger.info("=" * 50)
                                     
             return texto_final
             
         except Exception as e:
-            crypto_logger.logger.error(f"ERRO na decifração CBC: {e}")
+            crypto_logger.error(f"ERRO na decifração CBC: {e}")
             raise ValueError(f"Erro na decifração: {e}")

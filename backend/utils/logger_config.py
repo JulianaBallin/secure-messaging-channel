@@ -19,6 +19,23 @@ import os
 import re
 from datetime import datetime, timezone, timedelta
 
+def get_logger(name='messages_logger', logfile='logs/messages.log', level=logging.INFO):
+    """Return a configured logger instance for the given name."""
+    logger = logging.getLogger(name)
+    if logger.handlers:
+        return logger
+    logger.setLevel(level)
+    fh = RotatingFileHandler(logfile, maxBytes=5*1024*1024, backupCount=3, encoding='utf-8')
+    fmt = logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s')
+    fh.setFormatter(fmt)
+    logger.addHandler(fh)
+    sh = logging.StreamHandler()
+    sh.setFormatter(fmt)
+    logger.addHandler(sh)
+    return logger
+
+messages_logger = get_logger()
+
 # ======================================================
 # Diretório base
 # ======================================================

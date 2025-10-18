@@ -32,7 +32,7 @@ setup:
 # ======================================================
 db-init:
 	@echo "🔧 Inicializando banco de dados (criação/atualização)..."
-	@python $(INIT_SCRIPT)
+	@python3 $(INIT_SCRIPT)
 	@echo "✅ Banco verificado e pronto!"
 
 # ======================================================
@@ -59,7 +59,7 @@ db-remove:
 # ======================================================
 db-run:
 	@echo "🧭 Iniciando painel central do banco CipherTalk..."
-	@python $(RUN_BANCO)
+	@python3 $(RUN_BANCO)
 
 
 # ======================================================

@@ -16,6 +16,7 @@ import sys
 from getpass import getpass
 from base64 import b64encode
 from dotenv import load_dotenv
+from backend.utils.logger_config import messages_logger
 
 # Importar módulos internos
 sys.path.append(os.path.dirname(__file__))
@@ -61,17 +62,17 @@ async def perform_login():
         # Processar resposta
         data = json.loads(response.decode().strip())
         if "token" not in data:
-            print("❌ Usuário ou senha inválidos.")
+            messages_logger.info("❌ Usuário ou senha inválidos.")
             return None, None
 
-        print(f"✅ Login bem-sucedido! Bem-vindo(a), {username}.")
+        messages_logger.info(f"✅ Login bem-sucedido! Bem-vindo(a), {username}.")
         return username, data["token"]
 
     except ConnectionRefusedError:
-        print("❌ Servidor indisponível. Verifique se está em execução.")
+        messages_logger.info("❌ Servidor indisponível. Verifique se está em execução.")
         return None, None
     except Exception as e:
-        print(f"⚠️ Erro inesperado no login: {e}")
+        messages_logger.info(f"⚠️ Erro inesperado no login: {e}")
         return None, None
 
 
@@ -107,18 +108,18 @@ async def cadastrar_usuario():
     username = input("👤 Nome de usuário: ").strip()
 
     if not re.match(USERNAME_REGEX, username):
-        print("❌ Nome de usuário inválido. Use apenas letras, números e _.")
+        messages_logger.info("❌ Nome de usuário inválido. Use apenas letras, números e _.")
         return
 
     password = getpass("🔑 Crie uma senha: ")
     confirmar = getpass("🔁 Confirme a senha: ")
 
     if password != confirmar:
-        print("❌ As senhas não coincidem.")
+        messages_logger.info("❌ As senhas não coincidem.")
         return
 
     if not validar_senha(password):
-        print("❌ A senha deve ter pelo menos 8 caracteres, 1 maiúscula, 1 número e 1 caractere especial.")
+        messages_logger.info("❌ A senha deve ter pelo menos 8 caracteres, 1 maiúscula, 1 número e 1 caractere especial.")
         return
 
     # ATENÇÃO: seu RSAManager.gerar_par_chaves() retorna (privada_str, publica_str)
@@ -166,7 +167,7 @@ async def listar_usuarios(token: str):
 
     response = await reader.readline()
     if not response:
-        print("❌ Falha ao receber a lista de usuários.")
+        messages_logger.info("❌ Falha ao receber a lista de usuários.")
         return
 
     data = json.loads(response.decode().strip())
@@ -185,14 +186,14 @@ async def listar_usuarios(token: str):
 # ======================================================
 async def fazer_login():
     """Login + menu interno pós-autenticação."""
-    print("\n=== 🔐 Login ===")
+    messages_logger.info("\n=== 🔐 Login ===")
     username, token = await perform_login()
     if not token:
         input("\nPressione ENTER para voltar ao menu inicial...")
         return
 
     # Listener assíncrono para receber mensagens em tempo real
-    asyncio.create_task(start_listener(username, token, HOST, PORT))
+    asyncio.create_task(start_listener(HOST, PORT))
 
     while True:
         os.system("cls" if os.name == "nt" else "clear")
@@ -218,7 +219,7 @@ async def fazer_login():
             print("👋 Logout efetuado.")
             break
         else:
-            print("❌ Opção inválida.")
+            messages_logger.info("❌ Opção inválida.")
             input("\nPressione ENTER para continuar...")
 
 
@@ -241,10 +242,10 @@ async def menu_principal():
         elif opcao == "2":
             await fazer_login()
         elif opcao == "0":
-            print("👋 Encerrando cliente...")
+            messages_logger.info("👋 Encerrando cliente...")
             sys.exit(0)
         else:
-            print("❌ Opção inválida.")
+            messages_logger.info("❌ Opção inválida.")
             input("\nPressione ENTER para continuar...")
 
 
@@ -255,4 +256,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(menu_principal())
     except KeyboardInterrupt:
-        print("\n👋 Cliente encerrado pelo usuário.")
+        messages_logger.info("\n👋 Cliente encerrado pelo usuário.")
