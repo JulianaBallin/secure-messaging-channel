@@ -16,157 +16,103 @@ Implementa:
 - Proteção contra race conditions via asyncio.Lock
 """
 
-import asyncio
-import json
 import datetime
-from typing import Dict
 from sqlalchemy.orm import Session
-from backend.auth.models import User, Message, Group, GroupMember
+from backend.auth.models import User, Message
 from backend.auth.auth_jwt import create_access_token, verify_access_token
-from backend.utils.logger_config import server_logger as log
 from backend.auth.security import hash_senha as hash_password, verificar_senha as verify_password
 from backend.crypto.rsa_manager import RSAManager
 
-
-
-# ======================================================
-# LOCK GLOBAL DE USUÁRIOS
-# ======================================================
-USERS_LOCK = asyncio.Lock()
-
-
-# ======================================================
-# CADASTRO
-# ======================================================
-async def handle_register(db: Session, writer, creds: dict) -> None:
-    """Cadastra novo usuário, gera par de chaves RSA e armazena senha com hash Argon2id."""
+# ----------------------------
+# REGISTER (REST)
+# ----------------------------
+async def handle_register_rest(db: Session, creds: dict):
     username = creds.get("username")
     password = creds.get("password")
 
     if not username or not password:
-        writer.write("❌ Dados incompletos.\n".encode())
-        await writer.drain()
-        log.warning(f"[REGISTER_FAIL] Campos ausentes para cadastro de {username}")
-        return
+        return {"error": "Campos incompletos"}, 400
 
-    async with USERS_LOCK:
-        # Verifica se o usuário já existe
-        if db.query(User).filter(User.username == username).first():
-            writer.write("❌ Usuário já existe.\n".encode())
-            await writer.drain()
-            log.warning(f"[REGISTER_DUPLICATE] Tentativa duplicada de {username}")
-            return
+    # Verifica se usuário já existe
+    if db.query(User).filter(User.username == username).first():
+        return {"error": "Usuário já existe"}, 400
 
-        # Gera par de chaves RSA (privada e pública)
-        private_key_pem, public_key_pem = RSAManager.gerar_par_chaves()
+    # Gera par de chaves RSA
+    private_key_pem, public_key_pem = RSAManager.gerar_par_chaves()
 
-        # Hash da senha com Argon2
-        hashed_password = hash_password(password)
+    # Hash da senha
+    hashed_password = hash_password(password)
 
-        # Cria e persiste o novo usuário
-        new_user = User(
-            username=username,
-            password_hash=hashed_password,
-            public_key=public_key_pem.encode(),  # armazenar em bytes
-        )
-        db.add(new_user)
-        db.commit()
-
-    # Retorna chave privada ao cliente (pode ser exibida uma única vez)
-    writer.write(
-        json.dumps(
-            {
-                "status": "success",
-                "message": f"Usuário '{username}' criado com sucesso.",
-                "private_key": private_key_pem,
-            }
-        ).encode()
-        + b"\n"
+    # Cria usuário
+    new_user = User(
+        username=username,
+        password_hash=hashed_password,
+        public_key=public_key_pem.encode(),
     )
-    await writer.drain()
-    log.info(f"[REGISTER_OK] Novo usuário registrado: {username}")
+    db.add(new_user)
+    db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Usuário '{username}' criado com sucesso.",
+        "private_key": private_key_pem,
+    }
 
 
-# ======================================================
-# LOGIN + ENTREGA DE MENSAGENS OFFLINE
-# ======================================================
-async def handle_login(db: Session, writer, creds: dict, online_users: Dict[str, asyncio.StreamWriter]):
-    """Autentica o usuário e entrega mensagens pendentes do banco."""
+# ----------------------------
+# LOGIN (REST)
+# ----------------------------
+async def handle_login_rest(db: Session, creds: dict):
     username = creds.get("username")
     password = creds.get("password")
 
     if not username or not password:
-        writer.write("❌ Credenciais incompletas.\n".encode())
-        await writer.drain()
-        log.warning("[LOGIN_FAIL] Campos ausentes no login.")
-        return None, None
+        return None, "Credenciais incompletas"
 
     user = db.query(User).filter(User.username == username).first()
     if not user or not verify_password(password, user.password_hash):
-        writer.write("AUTH_FAILED\n".encode())
-        await writer.drain()
-        log.warning(f"[LOGIN_FAIL] Usuário inexistente ou senha incorreta: {username}")
-        return None, None
+        return None, "Usuário ou senha incorretos"
 
     token = create_access_token(username)
-    async with USERS_LOCK:
-        online_users[username] = writer
 
-    writer.write((json.dumps({"token": token}) + "\n").encode())
-    await writer.drain()
-    log.info(f"[LOGIN_OK] {username} autenticado e online.")
-
-    # --- Mensagens offline pendentes ---
+    # --- Mensagens offline ---
     offline_msgs = (
         db.query(Message)
         .join(User, User.id == Message.receiver_id)
         .filter(User.username == username)
         .all()
     )
-    if not offline_msgs:
-        return username, token
 
-    log.info(f"[OFFLINE_DELIVERY] {len(offline_msgs)} mensagens pendentes para {username}")
+    messages_payload = []
     for msg in offline_msgs:
-        try:
-            payload = {
-                "from": db.query(User).get(msg.sender_id).username,
-                "content_encrypted": msg.content_encrypted,
-                "key_encrypted": msg.key_encrypted,
-                "timestamp": str(msg.timestamp),
-            }
-            writer.write((json.dumps(payload) + "\n").encode())
-            await writer.drain()
-            db.delete(msg)
-        except Exception as e:
-            log.error(f"[OFFLINE_FAIL] Erro ao entregar mensagem offline: {e}")
+        payload = {
+            "from": db.query(User).get(msg.sender_id).username,
+            "content_encrypted": msg.content_encrypted,
+            "key_encrypted": msg.key_encrypted,
+            "timestamp": str(msg.timestamp),
+        }
+        messages_payload.append(payload)
+        db.delete(msg)
+
     db.commit()
-
-    log.info(f"[OFFLINE_OK] Todas as mensagens pendentes entregues para {username}")
-    return username, token
+    return {"token": token, "offline_messages": messages_payload}, None
 
 
-# ======================================================
-# LISTAGEM DE USUÁRIOS
-# ======================================================
-async def handle_list_users(db: Session, writer, message: dict, online_users: Dict[str, asyncio.StreamWriter]):
-    """Retorna a lista de todos os usuários e seus status."""
+# ----------------------------
+# LIST USERS (REST)
+# ----------------------------
+async def handle_list_users_rest(db: Session, token: str):
     try:
-        token = message.get("token")
         requester = verify_access_token(token)
         users = db.query(User).all()
-
         users_info = [
             {
                 "username": u.username,
-                "online": u.username in online_users,
                 "public_key": u.public_key.decode() if u.public_key else None,
             }
             for u in users
         ]
-        writer.write((json.dumps({"users": users_info}) + "\n").encode())
-        await writer.drain()
-        log.info(f"[LIST_OK] {requester} requisitou a lista de usuários ({len(users)} registros).")
+        return {"users": users_info}, None
     except Exception as e:
         log.error(f"[LIST_FAIL] Erro ao listar usuários: {e}")
         writer.write("❌ Falha ao obter lista de usuários.\n".encode())

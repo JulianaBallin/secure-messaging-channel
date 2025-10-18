@@ -1,3 +1,7 @@
+<<<<<<< HEAD
+=======
+# backend/server/handlers_rest.py
+>>>>>>> 73e04b9d59866131146847126279120f2bf11d31
 from backend.database.connection import SessionLocal
 from backend.auth.models import User
 from backend.auth.security import hash_senha as hash_password, verificar_senha as verify_password
