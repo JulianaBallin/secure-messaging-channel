@@ -45,18 +45,18 @@ PORT = int(os.getenv("SERVER_PORT", "8888"))
 ONLINE_USERS: Dict[str, asyncio.StreamWriter] = {}
 
 
-# ----------------------------
-# SSL/TLS Configuration
-# ----------------------------
+# ==========================================================
+# 🔐 CONFIGURAÇÃO SSL/TLS
+# ==========================================================
 def ensure_certificates():
-    """Generate self-signed TLS certificate if not exist."""
+    """Gera certificados TLS autoassinados se não existirem."""
     if not (os.path.exists("cert.pem") and os.path.exists("key.pem")):
         print("🔐 Gerando certificado TLS autoassinado...")
 
         comandos_openssl = [
-                "openssl", "req", "-new", "-x509", "-days", "365",
-                "-nodes", "-out", "cert.pem", "-keyout", "key.pem",
-                "-subj", "/CN=CipherTalk-Server"
+            "openssl", "req", "-new", "-x509", "-days", "365",
+            "-nodes", "-out", "cert.pem", "-keyout", "key.pem",
+            "-subj", "/CN=CipherTalk-Server"
         ]
 
         ssl_candidates = [
@@ -66,36 +66,41 @@ def ensure_certificates():
             "C:\\Program Files\\Git\\usr\\bin\\openssl.exe"
         ]
 
-        for ssl in ssl_candidates:
+        for ssl_bin in ssl_candidates:
             try:
-                comandos_openssl[0] = ssl
+                comandos_openssl[0] = ssl_bin
                 subprocess.run(comandos_openssl, check=True, capture_output=True, text=True)
                 print("✅ Certificados TLS gerados com sucesso.")
                 log.info("🔐 Certificados TLS autoassinados gerados.")
                 return
             except FileNotFoundError:
-                log.warning(f"⚠️ OpenSSL não encontrado: {comandos_openssl[0]}")
+                log.warning(f"⚠️ OpenSSL não encontrado: {ssl_bin}")
             except subprocess.CalledProcessError as e:
-                log.error(f"❌ Falha ao executar OpenSSL ({comandos_openssl[0]}): {e.stderr or e}")
+                log.error(f"❌ Falha ao executar OpenSSL ({ssl_bin}): {e.stderr or e}")
             except Exception as e:
                 log.error(f"❌ Erro inesperado ao tentar gerar certificados: {e}")
 
-        log.error(f"🚫 Nenhuma versão funcional do OpenSSL foi encontrada. Necessária instalação do OpenSSL.")
+        log.error("🚫 Nenhuma versão funcional do OpenSSL foi encontrada.")
 
 
 def create_ssl_context() -> ssl.SSLContext:
-    """Create an SSL context for the secure server."""
     ensure_certificates()
     context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
     context.load_cert_chain(certfile="cert.pem", keyfile="key.pem")
     return context
 
 
-# ----------------------------
-# Liberação automática da porta
-# ----------------------------
+# ==========================================================
+# 🧩 BANCO E PORTA
+# ==========================================================
+def ensure_database():
+    Base.metadata.create_all(bind=engine)
+    print("🗄️ Banco de dados verificado e atualizado com sucesso.")
+    log.info("🗄️ Banco de dados verificado e atualizado com sucesso.")
+
+
 def free_port(port: int):
-    """Forcefully free the port if occupied."""
+    """Libera a porta caso esteja ocupada (Unix/mac)."""
     try:
         output = subprocess.getoutput(f"lsof -ti:{port}")
         if output:
@@ -106,21 +111,11 @@ def free_port(port: int):
         log.error(f"⚠️ Não foi possível liberar a porta {port}: {e}")
 
 
-# ----------------------------
-# Inicialização automática do banco
-# ----------------------------
-def ensure_database():
-    """Garante que todas as tabelas essenciais existem no banco."""
-    Base.metadata.create_all(bind=engine)
-    print("🗄️ Banco de dados verificado e atualizado com sucesso.")
-    log.info("🗄️ Banco de dados verificado e atualizado com sucesso.")
-
-
-# ----------------------------
-# Manipulação de conexões
-# ----------------------------
+# ==========================================================
+# 🧠 CONEXÕES TLS
+# ==========================================================
 async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-    """Handles new client connections and delegates to handlers."""
+    """Gerencia nova conexão TLS e mantém sessão ativa indefinidamente."""
     db: Session = SessionLocal()
     username = None
     addr = writer.get_extra_info("peername")
@@ -128,105 +123,110 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
     print(f"📡 Nova conexão recebida de {addr}")
 
     try:
+        # Espera primeira ação (login ou resume_session)
         data = await reader.readline()
         if not data:
+            log.warning(f"[WARN] Conexão sem dados iniciais de {addr}")
             return
 
         message = json.loads(data.decode().strip())
         action = message.get("action")
 
-        # ----------------------------
-        # NOVO: Sessão persistente com token JWT
-        # ----------------------------
+        # =====================================================
+        # LOGIN OU RESTAURAÇÃO
+        # =====================================================
         if action == "resume_session":
             token = message.get("token")
             try:
                 username = verify_access_token(token)
+                print(f"[SERVER DEBUG] Token recebido no TLS: {token}")
             except Exception as e:
                 log.error(f"[RESUME ERROR] Falha ao verificar token: {e}")
                 username = None
+
             if not username:
-                writer.write("AUTH_FAILED\n".encode("utf-8"))
+                writer.write('{"status":"error","message":"AUTH_FAILED"}\n'.encode("utf-8"))
                 await writer.drain()
-                writer.close()
-                await writer.wait_closed()
-                log.warning("[RESUME_FAIL] Token inválido em tentativa de sessão persistente.")
+                log.warning(f"[RESUME_FAIL] Token inválido em {addr}")
                 return
 
+            # guarda a conexão do usuário
             ONLINE_USERS[username] = writer
             log.info(f"[RESUME] Sessão restaurada para {username}")
-            writer.write(json.dumps({"status": "ok", "message": "Sessão restaurada com sucesso."}).encode("utf-8") + b"\n")
+            writer.write('{"status":"ok","message":"Sessão restaurada"}\n'.encode("utf-8"))
             await writer.drain()
 
         elif action == "register":
             await handle_register(db, writer, message)
-            writer.close()
-            await writer.wait_closed()
             return
 
         elif action == "login":
             username, token = await handle_login(db, writer, message, ONLINE_USERS)
             if not username:
-                writer.close()
-                await writer.wait_closed()
                 return
 
         else:
-            writer.write("❌ Ação inicial inválida.\n".encode("utf-8"))
+            writer.write('{"status":"error","message":"Ação inicial inválida"}\n'.encode("utf-8"))
             await writer.drain()
-            writer.close()
-            await writer.wait_closed()
-            log.warning(f"[INVALID_ACTION] Ação inicial desconhecida: {action}")
+            log.warning(f"[INVALID_ACTION] {action}")
             return
 
-        # ----------------------------------------------------
-        # LOOP PRINCIPAL: ações pós-login / sessão
-        # ----------------------------------------------------
+        # =====================================================
+        # LOOP PRINCIPAL — NÃO FECHA AUTOMATICAMENTE
+        # =====================================================
         while True:
             data = await reader.readline()
+
+            # não fecha em inatividade — apenas continua
             if not data:
-                break
+                await asyncio.sleep(0.5)
+                continue
 
             try:
                 payload = json.loads(data.decode().strip())
                 action = payload.get("action")
 
-                if action == "list_users":
+                if action == "ping":
+                    writer.write('{"status":"pong"}\n'.encode("utf-8"))
+                    await writer.drain()
+
+                elif action == "list_users":
                     await handle_list_users(db, writer, payload, ONLINE_USERS)
+
                 elif action == "send_message":
                     await handle_send_message(db, payload, ONLINE_USERS)
+
                 elif action == "send_group_message":
                     await handle_send_group_message(db, payload, ONLINE_USERS)
+
                 else:
-                    log.warning(f"[WARN] Ação desconhecida: {action}")
-                    writer.write(f"❌ Ação desconhecida: {action}\n".encode("utf-8"))
+                    writer.write('{"status":"warn","message":"Ação desconhecida"}\n'.encode("utf-8"))
                     await writer.drain()
 
             except json.JSONDecodeError:
-                log.warning("[WARN] JSON inválido recebido.")
-                writer.write("❌ Erro: mensagem inválida (JSON incorreto).\n".encode("utf-8"))
+                writer.write('{"status":"error","message":"JSON inválido"}\n'.encode("utf-8"))
                 await writer.drain()
             except Exception as e:
                 log.error(f"[ERROR] Falha ao processar ação: {e}")
                 print(f"⚠️ Erro ao processar ação: {e}")
+                await asyncio.sleep(1)
 
     except Exception as e:
         log.error(f"[ERROR] Conexão encerrada com erro: {e}")
         print(f"💥 Erro de conexão: {e}")
 
     finally:
+        # Não fecha writer — apenas limpa referência
         if username and username in ONLINE_USERS:
             del ONLINE_USERS[username]
             log.info(f"[LOGOUT] {username} desconectado.")
-        writer.close()
-        await writer.wait_closed()
+        db.close()
 
 
-# ----------------------------
-# Inicialização do servidor
-# ----------------------------
+# ==========================================================
+# 🚀 MAIN
+# ==========================================================
 async def main():
-    """Start the secure messaging server."""
     ensure_database()
     ssl_context = create_ssl_context()
     free_port(PORT)
@@ -234,22 +234,19 @@ async def main():
     retry_count = 0
     while True:
         try:
-            server = await asyncio.start_server(
-                handle_client, HOST, PORT, ssl=ssl_context
-            )
+            server = await asyncio.start_server(handle_client, HOST, PORT, ssl=ssl_context)
             addr = server.sockets[0].getsockname()
             print(f"[SERVER] Servidor seguro rodando em {addr} (TLS habilitado)")
             log.info(f"[START] Servidor ativo em {addr} com TLS")
+
             async with server:
                 await server.serve_forever()
-            break
+
         except OSError as e:
             retry_count += 1
-            print(f"⚠️ Porta {PORT} ocupada ou erro ao iniciar ({retry_count}). Tentando novamente em 2s...")
-            log.warning(f"[WARN] Falha ao iniciar servidor ({e}), tentativa {retry_count}")
+            print(f"⚠️ Porta {PORT} ocupada ou erro ({retry_count}). Tentando em 2s...")
             await asyncio.sleep(2)
         except Exception as e:
-            print(f"💥 Erro inesperado ao iniciar servidor: {e}")
             log.error(f"[FATAL] {e}")
             await asyncio.sleep(2)
 

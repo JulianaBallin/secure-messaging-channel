@@ -6,33 +6,31 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import Link from "next/link";
+import { fetchJSON } from "@/lib/utils";
 
 export default function SignupPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
   const router = useRouter();
 
   const handleSignup = async () => {
-    setMessage(null);
+    setError(null);
+    setOk(null);
+    setLoading(true);
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/register", {
+      const data = await fetchJSON("/api/register", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
       });
-
-      if (!res.ok) {
-        const text = await res.text();
-        setMessage({ type: "error", text: "❌ Falha ao cadastrar: " + text });
-        return;
-      }
-
-      setMessage({ type: "success", text: "✅ Usuário cadastrado com sucesso!" });
-      setTimeout(() => router.push("/login"), 1500);
-    } catch (err) {
-      console.error(err);
-      setMessage({ type: "error", text: "❌ Erro de conexão com o servidor." });
+      setOk("Conta criada! Faça login.");
+      setTimeout(()=> router.push("/login"), 800);
+    } catch (e:any) {
+      setError(e.message || "Falha no cadastro");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -40,30 +38,19 @@ export default function SignupPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
       <Card className="w-full max-w-md shadow-lg border border-gray-200 rounded-2xl">
         <CardContent className="p-6 space-y-6">
-          <h1 className="text-3xl font-semibold text-center text-gray-800">📝 Cadastro</h1>
-
+          <h1 className="text-3xl font-semibold text-center text-gray-800">📝 Criar Conta</h1>
           <div className="space-y-3">
             <Input placeholder="Usuário" value={username} onChange={(e) => setUsername(e.target.value)} />
             <Input placeholder="Senha" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
           </div>
-
-          <Button onClick={handleSignup} className="w-full mt-2 bg-green-600 hover:bg-green-700 text-white font-medium">
-            Cadastrar
+          {error && <p className="text-red-600 text-sm text-center">{error}</p>}
+          {ok && <p className="text-green-700 text-sm text-center">{ok}</p>}
+          <Button onClick={handleSignup} disabled={loading} className="w-full bg-green-600 hover:bg-green-700 text-white font-medium">
+            {loading ? "Criando..." : "Criar conta"}
           </Button>
-
-          {message && (
-            <p
-              className={`text-center mt-2 ${
-                message.type === "success" ? "text-green-600" : "text-red-600"
-              }`}
-            >
-              {message.text}
-            </p>
-          )}
-
-          <Link href="/login" className="text-blue-600 hover:underline block text-center mt-2">
-            Já possui conta? Login
-          </Link>
+          <div className="text-center text-sm">
+            <Link className="text-blue-600 hover:underline" href="/login">Já tenho conta</Link>
+          </div>
         </CardContent>
       </Card>
     </div>

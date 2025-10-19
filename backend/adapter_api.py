@@ -1,20 +1,73 @@
 import asyncio
 import ssl
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
+import json
+from typing import Dict
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from backend.database.connection import SessionLocal
 from backend.server.handlers_rest import handle_register_rest, handle_login_rest
+from backend.auth.models import User, Message, Group, GroupMember
 from backend.auth.auth_jwt import verify_access_token
-import json
 
+# ======================================================
+# 🔐 CONFIGURAÇÃO DE REDE (TLS)
+# ======================================================
 TCP_HOST = "127.0.0.1"
 TCP_PORT = 8888
 SSL_CONTEXT = ssl.create_default_context()
 SSL_CONTEXT.check_hostname = False
 SSL_CONTEXT.verify_mode = ssl.CERT_NONE
 
+TLS_CONNECTIONS: Dict[str, Dict[str, asyncio.StreamWriter]] = {}
+
+
+async def ensure_tls_connection(username: str, token: str):
+    conn = TLS_CONNECTIONS.get(username)
+    if conn and not conn["writer"].is_closing():
+        return conn
+
+    reader, writer = await asyncio.open_connection(TCP_HOST, TCP_PORT, ssl=SSL_CONTEXT)
+    TLS_CONNECTIONS[username] = {"reader": reader, "writer": writer}
+    print(f"[TLS] 🔗 Conexão TLS aberta para {username}")
+
+    writer.write(json.dumps({"action": "resume_session", "token": token}).encode() + b"\n")
+    await writer.drain()
+
+    async def listen():
+        try:
+            while not reader.at_eof():
+                data = await reader.readline()
+                if not data:
+                    break
+                print(f"[TLS][{username}] {data.decode().strip()}")
+        except Exception as e:
+            print(f"[TLS_READ_ERR][{username}] {e}")
+
+    asyncio.create_task(listen())
+    return TLS_CONNECTIONS[username]
+
+
+# ======================================================
+# 🫀 KEEP-ALIVE
+# ======================================================
+async def start_keepalive():
+    while True:
+        await asyncio.sleep(30)
+        for user, conn in list(TLS_CONNECTIONS.items()):
+            writer = conn.get("writer")
+            if writer and not writer.is_closing():
+                try:
+                    writer.write(json.dumps({"action": "ping"}).encode() + b"\n")
+                    await writer.drain()
+                except Exception as e:
+                    print(f"[PING_FAIL][{user}] {e}")
+
+
+# ======================================================
+# 🚀 FASTAPI
+# ======================================================
 app = FastAPI(title="CipherTalk Adapter API")
 
 app.add_middleware(
@@ -25,16 +78,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# -------------------
-# REST Models
-# -------------------
+
+# ======================================================
+# 📦 MODELOS
+# ======================================================
 class AuthRequest(BaseModel):
     username: str
     password: str
 
-# -------------------
-# REST Endpoints
-# -------------------
+
+class CreateGroupReq(BaseModel):
+    token: str
+    name: str
+
+
+class AddMemberReq(BaseModel):
+    token: str
+    group: str
+    username: str
+
+
+# ======================================================
+# 👤 REGISTRO E LOGIN
+# ======================================================
 @app.post("/api/register")
 async def api_register(req: AuthRequest):
     db = SessionLocal()
@@ -42,6 +108,7 @@ async def api_register(req: AuthRequest):
         return await handle_register_rest(db, req.dict())
     finally:
         db.close()
+
 
 @app.post("/api/login")
 async def api_login(req: AuthRequest):
@@ -54,101 +121,286 @@ async def api_login(req: AuthRequest):
     finally:
         db.close()
 
-# -------------------
-# WebSocket Endpoint (com broadcast)
-# -------------------
-class ConnectionManager:
-    """Gerencia conexão WebSocket com navegador."""
-    def __init__(self):
-        self.active_connections: list[WebSocket] = []
 
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        self.active_connections.append(websocket)
+# ======================================================
+# 💬 MENSAGENS - HISTÓRICO PRIVADO
+# ======================================================
+@app.get("/api/messages/inbox/{username}")
+async def api_inbox(username: str):
+    from backend.crypto.idea_manager import IDEAManager
 
-    def disconnect(self, websocket: WebSocket):
-        if websocket in self.active_connections:
-            self.active_connections.remove(websocket)
-
-    async def send_personal_message(self, message: dict, websocket: WebSocket):
-        """Envia mensagem apenas para um cliente."""
-        await websocket.send_json(message)
-
-    async def broadcast(self, message: dict):
-        """Envia mensagem para todos os clientes conectados."""
-        disconnected = []
-        for ws in self.active_connections:
-            try:
-                await ws.send_json(message)
-            except:
-                disconnected.append(ws)
-        # remove conexões quebradas
-        for ws in disconnected:
-            self.disconnect(ws)
-
-
-manager = ConnectionManager()
-
-
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
-    tcp_reader, tcp_writer = None, None
-
+    db = SessionLocal()
     try:
-        # Conecta ao servidor TCP (criptografado)
-        tcp_reader, tcp_writer = await asyncio.open_connection(
-            TCP_HOST, TCP_PORT, ssl=SSL_CONTEXT
+        user = db.query(User).filter(User.username == username).first()
+        if not user:
+            raise HTTPException(status_code=404, detail=f"Usuário '{username}' não encontrado.")
+
+        priv_path = f"keys/{username}_private.pem"
+        try:
+            with open(priv_path, "r") as f:
+                private_key_pem = f.read()
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail=f"Chave privada de '{username}' não encontrada em {priv_path}")
+
+        messages = (
+            db.query(Message)
+            .filter(
+                ((Message.sender_id == user.id) | (Message.receiver_id == user.id)) &
+                (Message.group_id == None)
+            )
+            .order_by(Message.timestamp.asc())
+            .all()
         )
 
-        async def tcp_to_ws():
-            while True:
-                data = await tcp_reader.readline()
-                if not data:
-                    break
-                msg = data.decode().strip()
-                # Envia a mensagem para todos conectados
-                await manager.broadcast({"message": msg})
+        formatted = []
+        for msg in messages:
+            sender_user = db.query(User).get(msg.sender_id)
+            receiver_user = db.query(User).get(msg.receiver_id)
+            is_outgoing = sender_user and sender_user.username == username
+            content_plain = None
 
-        tcp_task = asyncio.create_task(tcp_to_ws())
+            if not is_outgoing:
+                try:
+                    content_plain = IDEAManager().decifrar_do_chat(
+                        packet=msg.content_encrypted,
+                        cek_b64=msg.key_encrypted,
+                        destinatario=username,
+                        chave_privada_pem=private_key_pem,
+                    )
+                except Exception as e:
+                    print(f"[DECRYPT_FAIL] {msg.id} → {e}")
+                    content_plain = "(erro ao decifrar)"
+            else:
+                content_plain = None
 
-        while True:
-            msg = await websocket.receive_text()
+            formatted.append({
+                "id": msg.id,
+                "sender": sender_user.username if sender_user else "Desconhecido",
+                "receiver": receiver_user.username if receiver_user else "Desconhecido",
+                "content": content_plain,
+                "content_encrypted": msg.content_encrypted,
+                "key_encrypted": msg.key_encrypted,
+                "outgoing": is_outgoing,
+                "timestamp": str(msg.timestamp),
+            })
 
-            try:
-                parsed = json.loads(msg)
-                if parsed.get("action") == "send_message":
-                    content = parsed.get("content", "")
-                    tcp_writer.write((content + "\n").encode())
-                    await tcp_writer.drain()
-                    # Envia mensagem também para todos conectados
-                    await manager.broadcast({"message": f"Usuário: {content}"})
-
-                elif parsed.get("action") == "resume_session":
-                    token = parsed.get("token", "")
-                    try:
-                        verify_access_token(token)
-                        await manager.send_personal_message(
-                            {"message": "Sessão restaurada com sucesso."}, websocket
-                        )
-                    except Exception:
-                        await manager.send_personal_message(
-                            {"message": "Token inválido."}, websocket
-                        )
-            except json.JSONDecodeError:
-                tcp_writer.write((msg + "\n").encode())
-                await tcp_writer.drain()
-
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
-    except Exception as e:
-        print(f"[WS ERROR] {e}")
-        try:
-            await websocket.send_json({"error": str(e)})
-        except:
-            pass
+        return {"messages": formatted}
     finally:
-        if tcp_writer:
-            tcp_writer.close()
-            await tcp_writer.wait_closed()
-        manager.disconnect(websocket)
+        db.close()
+
+
+# ======================================================
+# 💌 ENVIO PRIVADO
+# ======================================================
+@app.post("/api/messages/send")
+async def api_send_message(req: Request):
+    from backend.crypto.idea_manager import IDEAManager
+    db = SessionLocal()
+    try:
+        data = await req.json()
+        token = data.get("token")
+        to = data.get("to")
+        content = data.get("content", "")
+        if not token or not to or not content:
+            raise HTTPException(status_code=400, detail="Campos obrigatórios ausentes.")
+        sender = verify_access_token(token)
+        if not sender:
+            raise HTTPException(status_code=401, detail="❌ Token inválido.")
+        receiver = db.query(User).filter(User.username == to).first()
+        if not receiver or not receiver.public_key:
+            raise HTTPException(status_code=404, detail=f"Destinatário '{to}' não encontrado ou sem chave pública.")
+        pubkey_pem = receiver.public_key.decode("utf-8", errors="ignore")
+
+        idea = IDEAManager()
+        content_encrypted_b64, cek_rsa_b64 = idea.cifrar_para_chat(
+            texto_plano=content,
+            remetente=sender,
+            destinatario=to,
+            chave_publica_destinatario_pem=pubkey_pem,
+        )
+
+        await ensure_tls_connection(sender, token)
+        writer = TLS_CONNECTIONS[sender]["writer"]
+        writer.write(json.dumps({
+            "action": "send_message",
+            "token": token,
+            "to": to,
+            "content_encrypted": content_encrypted_b64,
+            "key_encrypted": cek_rsa_b64,
+        }).encode() + b"\n")
+        await writer.drain()
+
+        print(f"[SEND_OK] {sender} → {to}")
+        return {"status": "success", "message": f"Mensagem enviada de {sender} para {to}."}
+    finally:
+        db.close()
+
+# ======================================================
+# 👥 GRUPOS
+# ======================================================
+from backend.crypto.rsa_manager import RSAManager
+from backend.crypto.idea_manager import IDEAManager
+
+
+@app.post("/api/groups/create")
+async def api_groups_create(req: CreateGroupReq):
+    """Cria um novo grupo e define o criador como admin."""
+    from backend.database.queries.groups import create_group
+
+    db = SessionLocal()
+    try:
+        creator = verify_access_token(req.token)
+        if not creator:
+            raise HTTPException(status_code=401, detail="Token inválido.")
+
+        g = create_group(db, name=req.name, admin_username=creator)
+        return {"status": "ok", "group": {"id": g.id, "name": g.name}}
+    finally:
+        db.close()
+
+
+@app.post("/api/groups/add_member")
+async def api_groups_add_member(req: AddMemberReq):
+    """Adiciona um membro a um grupo existente."""
+    db = SessionLocal()
+    try:
+        requester = verify_access_token(req.token)
+        if not requester:
+            raise HTTPException(status_code=401, detail="Token inválido.")
+
+        group = db.query(Group).filter_by(name=req.group).first()
+        user = db.query(User).filter_by(username=req.username).first()
+
+        if not group or not user:
+            raise HTTPException(status_code=404, detail="Grupo ou usuário não encontrado.")
+
+        exists = db.query(GroupMember).filter_by(group_id=group.id, user_id=user.id).first()
+        if exists:
+            return {"status": "ok", "message": "Usuário já é membro."}
+
+        db.add(GroupMember(group_id=group.id, user_id=user.id))
+        db.commit()
+        return {"status": "ok", "message": f"{req.username} adicionado ao grupo {req.group}."}
+    finally:
+        db.close()
+
+
+@app.get("/api/groups/my")
+async def api_groups_my(token: str):
+    """Retorna os grupos dos quais o usuário é membro."""
+    db = SessionLocal()
+    try:
+        me = verify_access_token(token)
+        user = db.query(User).filter_by(username=me).first()
+
+        groups = (
+            db.query(Group)
+            .join(GroupMember, GroupMember.group_id == Group.id)
+            .filter(GroupMember.user_id == user.id)
+            .all()
+        )
+
+        return {"groups": [{"id": g.id, "name": g.name} for g in groups]}
+    finally:
+        db.close()
+
+
+@app.post("/api/groups/send")
+async def api_groups_send(req: Request):
+    """Envia uma mensagem cifrada para todos os membros de um grupo."""
+    db = SessionLocal()
+    try:
+        data = await req.json()
+        token = data.get("token")
+        group_name = data.get("group")
+        content = data.get("content")
+
+        sender_name = verify_access_token(token)
+        user_sender = db.query(User).filter_by(username=sender_name).first()
+        group = db.query(Group).filter_by(name=group_name).first()
+
+        if not (group and user_sender):
+            raise HTTPException(status_code=404, detail="Grupo ou remetente inválido.")
+
+        members = db.query(GroupMember).filter_by(group_id=group.id).all()
+        idea = IDEAManager()
+
+        # 🔐 Cifra a mensagem uma vez (para cada membro, cifra apenas o CEK com a pubkey dele)
+        sample_user = db.query(User).first()
+        cipher, _ = idea.cifrar_para_chat(
+            texto_plano=content,
+            remetente=sender_name,
+            destinatario="grupo",
+            chave_publica_destinatario_pem=sample_user.public_key.decode()
+        )
+        cek_bytes = bytes.fromhex(idea.get_chave_sessao_hex())
+
+        for m in members:
+            user = db.query(User).get(m.user_id)
+            if not user or not user.public_key:
+                continue
+            pub = user.public_key.decode()
+            cek_enc = RSAManager.cifrar_chave_sessao(cek_bytes, pub)
+
+            msg = Message(
+                sender_id=user_sender.id,
+                receiver_id=user.id,
+                group_id=group.id,
+                content_encrypted=cipher,
+                key_encrypted=cek_enc,
+            )
+            db.add(msg)
+
+        db.commit()
+        return {"status": "success"}
+    finally:
+        db.close()
+
+
+@app.get("/api/groups/{group_name}/messages")
+async def api_groups_messages(group_name: str, token: str):
+    """Retorna as mensagens de um grupo decifradas para o usuário autenticado."""
+    db = SessionLocal()
+    try:
+        user_name = verify_access_token(token)
+        user = db.query(User).filter_by(username=user_name).first()
+        group = db.query(Group).filter_by(name=group_name).first()
+
+        if not group or not user:
+            raise HTTPException(status_code=404, detail="Grupo ou usuário inválido.")
+
+        msgs = (
+            db.query(Message)
+            .filter(Message.group_id == group.id, Message.receiver_id == user.id)
+            .order_by(Message.timestamp.asc())
+            .all()
+        )
+
+        priv_path = f"keys/{user_name}_private.pem"
+        with open(priv_path, "r") as f:
+            private_key_pem = f.read()
+
+        formatted = []
+        for msg in msgs:
+            sender = db.query(User).get(msg.sender_id)
+            try:
+                plain = IDEAManager().decifrar_do_chat(
+                    packet=msg.content_encrypted,
+                    cek_b64=msg.key_encrypted,
+                    destinatario=user_name,
+                    chave_privada_pem=private_key_pem,
+                )
+            except Exception as e:
+                print(f"[GROUP_DEC_ERR] {e}")
+                plain = "(erro ao decifrar)"
+
+            formatted.append({
+                "id": msg.id,
+                "from": sender.username if sender else "Desconhecido",
+                "content": plain,
+                "timestamp": str(msg.timestamp),
+            })
+
+        return {"messages": formatted}
+    finally:
+        db.close()
