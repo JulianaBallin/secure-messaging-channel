@@ -5,92 +5,89 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import Link from "next/link";
 import { fetchJSON } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface MessageItem {
+  id: number;
   sender: string;
   receiver: string;
   content: string;
   timestamp?: string;
   outgoing?: boolean;
-  mirror?: boolean;
+}
+
+interface Group {
+  id: number;
+  name: string;
+}
+
+interface GroupMessage {
+  id: number;
+  from: string;
+  content: string;
+  timestamp: string;
 }
 
 export default function ChatPage() {
   const router = useRouter();
+  const [mode, setMode] = useState<"private" | "group">("private");
   const [user, setUser] = useState<string | null>(null);
   const [receiver, setReceiver] = useState("");
   const [text, setText] = useState("");
   const [messages, setMessages] = useState<MessageItem[]>([]);
+  const [groups, setGroups] = useState<Group[]>([]);
+  const [selectedGroup, setSelectedGroup] = useState<string | null>(null);
+  const [groupMessages, setGroupMessages] = useState<GroupMessage[]>([]);
+  const [newGroup, setNewGroup] = useState("");
+  const [newMember, setNewMember] = useState("");
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
-  // 🔐 Verifica login
+  // 🔐 login check
   useEffect(() => {
-    const storedUser = localStorage.getItem("username");
-    if (storedUser) setUser(storedUser);
-    else router.push("/login");
+    const u = localStorage.getItem("username");
+    if (!u) router.push("/login");
+    else setUser(u);
   }, [router]);
 
-  // 📩 Carrega mensagens
+  // =======================================================
+  // 💌 CHAT PRIVADO
+  // =======================================================
   const loadInbox = async () => {
     if (!user) return;
     try {
       const data = await fetchJSON(`/api/messages/inbox/${user}`);
       const fetched = data.messages || [];
-
       setMessages((prev) => {
-        const merged = [...prev];
-        for (const msg of fetched) {
-          if (
-            !merged.some(
-              (m) =>
-                m.sender === msg.sender &&
-                m.receiver === msg.receiver &&
-                m.timestamp === msg.timestamp
-            )
-          ) {
-            merged.push(msg);
-          }
-        }
-        return merged;
+        const newMsgs = fetched.filter(
+          (m: MessageItem) => !prev.some((p) => p.id === m.id)
+        );
+        return [...prev, ...newMsgs];
       });
 
-      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+      scrollToBottom();
     } catch (e) {
-      console.error("Erro ao carregar mensagens:", e);
+      console.error("Erro ao carregar mensagens privadas:", e);
     }
   };
 
+  const scrollToBottom = () =>
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+
   useEffect(() => {
-    if (!user) return;
+    if (mode !== "private" || !user) return;
     loadInbox();
     const id = setInterval(loadInbox, 4000);
     return () => clearInterval(id);
-  }, [user]);
+  }, [user, mode]);
 
-  // ✉️ Envia mensagem
-  const sendMessage = async () => {
+  const sendPrivate = async () => {
     if (!user || !receiver || !text.trim()) {
-      alert("⚠️ Digite uma mensagem e informe o destinatário.");
+      alert("⚠️ Digite a mensagem e o destinatário.");
       return;
     }
-
-    const newMsg: MessageItem = {
-      sender: user,
-      receiver,
-      content: text,
-      timestamp: new Date().toISOString(),
-      outgoing: true,
-      mirror: true,
-    };
-
-    setMessages((prev) => [...prev, newMsg]);
-    setText("");
-    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
-
     setLoading(true);
     try {
       await fetchJSON(`/api/messages/send`, {
@@ -98,132 +95,340 @@ export default function ChatPage() {
         body: JSON.stringify({
           token: localStorage.getItem("token"),
           to: receiver,
-          content: newMsg.content,
+          content: text,
         }),
       });
-      console.log(`[SEND_OK] ${user} → ${receiver}`);
+
+      // 🔁 espelha no chat imediatamente
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now(),
+          sender: user,
+          receiver,
+          content: text,
+          outgoing: true,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+
+      setText("");
+      scrollToBottom();
     } catch (e) {
-      console.error("Erro ao enviar:", e);
-      alert("❌ Falha ao enviar mensagem.");
+      alert("❌ Falha ao enviar mensagem privada.");
     } finally {
       setLoading(false);
     }
   };
 
-  // 🚪 Logout
-  const logout = () => {
-    localStorage.clear();
-    router.push("/login");
+  // =======================================================
+  // 👥 CHAT DE GRUPO
+  // =======================================================
+  const loadGroups = async () => {
+    if (!token) return;
+    try {
+      const data = await fetchJSON(`/api/groups/my?token=${token}`);
+      setGroups(data.groups || []);
+    } catch (e) {
+      console.error("Erro ao carregar grupos:", e);
+    }
   };
 
+  const loadGroupMessages = async (groupName: string) => {
+    if (!token) return;
+    try {
+      const data = await fetchJSON(`/api/groups/${groupName}/messages?token=${token}`);
+      setGroupMessages(data.messages || []);
+      scrollToBottom();
+    } catch (e) {
+      console.error("Erro ao carregar mensagens do grupo:", e);
+    }
+  };
+
+  useEffect(() => {
+    if (mode !== "group" || !selectedGroup) return;
+    loadGroupMessages(selectedGroup);
+    const id = setInterval(() => loadGroupMessages(selectedGroup), 4000);
+    return () => clearInterval(id);
+  }, [selectedGroup, mode]);
+
+  const sendGroupMessage = async () => {
+    if (!selectedGroup || !text.trim() || !token || !user) return;
+    setLoading(true);
+    try {
+      await fetchJSON(`/api/groups/send`, {
+        method: "POST",
+        body: JSON.stringify({
+          token,
+          group: selectedGroup,
+          content: text,
+        }),
+      });
+
+      // 🔁 espelha a própria mensagem localmente
+      setGroupMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now(),
+          from: user,
+          content: text,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+
+      setText("");
+      scrollToBottom();
+    } catch (e) {
+      alert("❌ Falha ao enviar mensagem no grupo.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const createGroup = async () => {
+    if (!newGroup.trim() || !token) return;
+    try {
+      await fetchJSON(`/api/groups/create`, {
+        method: "POST",
+        body: JSON.stringify({ token, name: newGroup }),
+      });
+      setNewGroup("");
+      loadGroups();
+    } catch {
+      alert("❌ Erro ao criar grupo.");
+    }
+  };
+
+  const addMember = async () => {
+    if (!selectedGroup || !newMember.trim() || !token) return;
+    try {
+      await fetchJSON(`/api/groups/add_member`, {
+        method: "POST",
+        body: JSON.stringify({
+          token,
+          group: selectedGroup,
+          username: newMember,
+        }),
+      });
+      setNewMember("");
+      alert("✅ Membro adicionado com sucesso!");
+    } catch {
+      alert("❌ Erro ao adicionar membro.");
+    }
+  };
+
+  // =======================================================
+  // UI
+  // =======================================================
   if (!user) return null;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
-      <Card className="w-full max-w-2xl shadow-lg border border-gray-200 rounded-2xl">
+      <Card className="w-full max-w-3xl shadow-lg border border-gray-200 rounded-2xl">
         <CardContent className="p-6 space-y-6">
-          {/* Cabeçalho */}
-          <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-semibold text-gray-800">💬 Chat Seguro</h1>
-            <div className="flex gap-3 text-sm">
-              <span className="text-gray-600">
-                Logado como <b>{user}</b>
-              </span>
-              <button onClick={logout} className="text-red-600 hover:underline">
+          {/* HEADER */}
+          <div className="flex justify-between items-center">
+            <h1 className="text-2xl font-semibold text-gray-800">
+              {mode === "private" ? "💬 Chat Privado" : "👥 Chat em Grupo"}
+            </h1>
+            <div className="text-sm text-gray-600">
+              🔒 Logado como: <span className="font-semibold">{user}</span>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => setMode("private")}
+                variant={mode === "private" ? "default" : "outline"}
+              >
+                💬 Privado
+              </Button>
+              <Button
+                onClick={() => {
+                  setMode("group");
+                  loadGroups();
+                }}
+                variant={mode === "group" ? "default" : "outline"}
+              >
+                👥 Grupos
+              </Button>
+              <Button
+                className="text-red-600 border-red-600 hover:bg-red-50"
+                variant="outline"
+                onClick={() => {
+                  localStorage.clear();
+                  router.push("/login");
+                }}
+              >
                 Sair
-              </button>
+              </Button>
             </div>
           </div>
 
-          {/* Campo destinatário */}
-          <div className="flex gap-2">
-            <Input
-              placeholder="Destinatário"
-              value={receiver}
-              onChange={(e) => setReceiver(e.target.value)}
-            />
-            <Button onClick={loadInbox} className="bg-gray-100 text-gray-700 border">
-              Atualizar
-            </Button>
-          </div>
+          {/* PRIVADO */}
+          {mode === "private" && (
+            <>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Destinatário"
+                  value={receiver}
+                  onChange={(e) => setReceiver(e.target.value)}
+                />
+                <Button onClick={loadInbox} variant="outline">
+                  Atualizar
+                </Button>
+              </div>
 
-          {/* Mensagens */}
-          <div className="h-80 overflow-y-auto bg-white border rounded-xl p-4 space-y-3">
-            {messages.length === 0 && (
-              <p className="text-sm text-gray-500">Sem mensagens. Envie uma 👇</p>
-            )}
-
-            <AnimatePresence>
-              {messages
-                .filter((m) => m.content && m.content.trim() !== "") // 💥 remove mensagens vazias
-                .sort(
-                  (a, b) =>
-                    new Date(a.timestamp || 0).getTime() -
-                    new Date(b.timestamp || 0).getTime()
-                )
-                .map((m, idx) => {
-                  const isOutgoing = m.outgoing || m.sender === user;
-
-                  return (
+              <div className="h-80 overflow-y-auto bg-white border rounded-xl p-4 space-y-3">
+                {messages.length === 0 && (
+                  <p className="text-sm text-gray-500 text-center">
+                    Nenhuma mensagem ainda 👇
+                  </p>
+                )}
+                <AnimatePresence>
+                  {messages.map((m, i) => (
                     <motion.div
-                      key={`${m.sender}-${m.timestamp}-${idx}`}
+                      key={m.id ?? i}
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: -10 }}
-                      transition={{ duration: 0.2 }}
-                      className={`flex ${isOutgoing ? "justify-end" : "justify-start"}`}
+                      className={`flex ${
+                        m.sender === user ? "justify-end" : "justify-start"
+                      }`}
                     >
                       <div
                         className={`rounded-xl px-3 py-2 max-w-[80%] ${
-                          isOutgoing
+                          m.sender === user
                             ? "bg-blue-600 text-white"
                             : "bg-gray-100 text-gray-800"
                         }`}
                       >
-                        <div className="text-xs opacity-70 mb-1">
-                          {m.sender} → {m.receiver}
+                        <div>{m.content}</div>
+                        <div className="text-[10px] opacity-60 mt-1 text-right">
+                          {new Date(m.timestamp || "").toLocaleTimeString()}
                         </div>
-                        <div className="whitespace-pre-wrap break-words">{m.content}</div>
-                        {m.timestamp && (
-                          <div className="text-[10px] opacity-60 mt-1 text-right">
-                            {new Date(m.timestamp).toLocaleTimeString()}
-                          </div>
-                        )}
                       </div>
                     </motion.div>
-                  );
-                })}
-            </AnimatePresence>
+                  ))}
+                </AnimatePresence>
+                <div ref={bottomRef} />
+              </div>
 
-            <div ref={bottomRef} />
-          </div>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Digite sua mensagem..."
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && sendPrivate()}
+                />
+                <Button
+                  onClick={sendPrivate}
+                  disabled={loading}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  {loading ? "Enviando..." : "Enviar"}
+                </Button>
+              </div>
+            </>
+          )}
 
-          {/* Campo de envio */}
-          <div className="flex gap-2">
-            <Input
-              placeholder="Digite sua mensagem..."
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-            />
-            <Button
-              onClick={sendMessage}
-              disabled={loading}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-medium"
-            >
-              {loading ? "Enviando..." : "Enviar"}
-            </Button>
-          </div>
+          {/* GRUPOS */}
+          {mode === "group" && (
+            <>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Novo grupo"
+                  value={newGroup}
+                  onChange={(e) => setNewGroup(e.target.value)}
+                />
+                <Button onClick={createGroup} className="bg-green-600 text-white">
+                  Criar
+                </Button>
+                <Button onClick={loadGroups} variant="outline">
+                  🔄 Atualizar
+                </Button>
+              </div>
 
-          {/* Links */}
-          <div className="flex justify-between text-sm">
-            <Link className="text-blue-600 hover:underline" href="/login">
-              Login
-            </Link>
-            <Link className="text-blue-600 hover:underline" href="/signup">
-              Criar Conta
-            </Link>
-          </div>
+              <div className="flex gap-2 overflow-x-auto">
+                {groups.map((g) => (
+                  <Button
+                    key={g.id}
+                    onClick={() => setSelectedGroup(g.name)}
+                    variant={selectedGroup === g.name ? "default" : "outline"}
+                  >
+                    {g.name}
+                  </Button>
+                ))}
+              </div>
+
+              {selectedGroup && (
+                <>
+                  <h2 className="text-lg font-semibold text-gray-700">
+                    💬 Grupo: {selectedGroup}
+                  </h2>
+
+                  <div className="flex gap-2 mb-2">
+                    <Input
+                      placeholder="Adicionar membro..."
+                      value={newMember}
+                      onChange={(e) => setNewMember(e.target.value)}
+                    />
+                    <Button onClick={addMember} variant="outline">
+                      ➕
+                    </Button>
+                  </div>
+
+                  <div className="h-80 overflow-y-auto bg-white border rounded-xl p-4 space-y-3">
+                    {groupMessages.length === 0 && (
+                      <p className="text-sm text-gray-500 text-center">
+                        Sem mensagens ainda 👇
+                      </p>
+                    )}
+                    <AnimatePresence>
+                      {groupMessages.map((m, i) => (
+                        <motion.div
+                          key={m.id ?? i}
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -10 }}
+                          className={`flex ${m.from === user ? "justify-end" : "justify-start"}`}
+                        >
+                          <div
+                            className={`rounded-xl px-3 py-2 max-w-[80%] ${
+                              m.from === user
+                                ? "bg-blue-600 text-white"
+                                : "bg-gray-100 text-gray-800"
+                            }`}
+                          >
+                            <div className="text-xs opacity-70 mb-1">{m.from}</div>
+                            <div>{m.content}</div>
+                            <div className="text-[10px] opacity-60 mt-1 text-right">
+                              {new Date(m.timestamp).toLocaleTimeString()}
+                            </div>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
+                    <div ref={bottomRef} />
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Digite uma mensagem..."
+                      value={text}
+                      onChange={(e) => setText(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && sendGroupMessage()}
+                    />
+                    <Button
+                      onClick={sendGroupMessage}
+                      disabled={loading}
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                      {loading ? "Enviando..." : "Enviar"}
+                    </Button>
+                  </div>
+                </>
+              )}
+            </>
+          )}
         </CardContent>
       </Card>
     </div>
