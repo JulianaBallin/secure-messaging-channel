@@ -14,6 +14,7 @@ interface MessageItem {
   receiver: string;
   content: string;
   timestamp?: string;
+  outgoing?: boolean;
   mirror?: boolean;
 }
 
@@ -33,24 +34,21 @@ export default function ChatPage() {
     else router.push("/login");
   }, [router]);
 
-  // 📩 Carrega mensagens do backend
+  // 📩 Carrega mensagens
   const loadInbox = async () => {
     if (!user) return;
     try {
       const data = await fetchJSON(`/api/messages/inbox/${user}`);
-      const fetched = data.messages || data;
+      const fetched = data.messages || [];
 
-      // Mantém mensagens já enviadas localmente (mirror)
       setMessages((prev) => {
         const merged = [...prev];
         for (const msg of fetched) {
-          // evita duplicatas
           if (
             !merged.some(
               (m) =>
                 m.sender === msg.sender &&
                 m.receiver === msg.receiver &&
-                m.content === msg.content &&
                 m.timestamp === msg.timestamp
             )
           ) {
@@ -73,7 +71,7 @@ export default function ChatPage() {
     return () => clearInterval(id);
   }, [user]);
 
-  // ✉️ Envio com persistência local
+  // ✉️ Envia mensagem
   const sendMessage = async () => {
     if (!user || !receiver || !text.trim()) {
       alert("⚠️ Digite uma mensagem e informe o destinatário.");
@@ -85,10 +83,10 @@ export default function ChatPage() {
       receiver,
       content: text,
       timestamp: new Date().toISOString(),
+      outgoing: true,
       mirror: true,
     };
 
-    // exibe e salva localmente
     setMessages((prev) => [...prev, newMsg]);
     setText("");
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
@@ -124,7 +122,7 @@ export default function ChatPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
       <Card className="w-full max-w-2xl shadow-lg border border-gray-200 rounded-2xl">
         <CardContent className="p-6 space-y-6">
-          {/* Header */}
+          {/* Cabeçalho */}
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-semibold text-gray-800">💬 Chat Seguro</h1>
             <div className="flex gap-3 text-sm">
@@ -137,7 +135,7 @@ export default function ChatPage() {
             </div>
           </div>
 
-          {/* Destinatário */}
+          {/* Campo destinatário */}
           <div className="flex gap-2">
             <Input
               placeholder="Destinatário"
@@ -149,7 +147,7 @@ export default function ChatPage() {
             </Button>
           </div>
 
-          {/* Caixa de mensagens */}
+          {/* Mensagens */}
           <div className="h-80 overflow-y-auto bg-white border rounded-xl p-4 space-y-3">
             {messages.length === 0 && (
               <p className="text-sm text-gray-500">Sem mensagens. Envie uma 👇</p>
@@ -157,41 +155,44 @@ export default function ChatPage() {
 
             <AnimatePresence>
               {messages
+                .filter((m) => m.content && m.content.trim() !== "") // 💥 remove mensagens vazias
                 .sort(
                   (a, b) =>
                     new Date(a.timestamp || 0).getTime() -
                     new Date(b.timestamp || 0).getTime()
                 )
-                .map((m, idx) => (
-                  <motion.div
-                    key={`${m.sender}-${m.timestamp}-${idx}`}
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    transition={{ duration: 0.2 }}
-                    className={`flex ${m.sender === user ? "justify-end" : "justify-start"}`}
-                  >
-                    <div
-                      className={`rounded-xl px-3 py-2 max-w-[80%] ${
-                        m.sender === user
-                          ? "bg-blue-600 text-white"
-                          : "bg-gray-100 text-gray-800"
-                      }`}
+                .map((m, idx) => {
+                  const isOutgoing = m.outgoing || m.sender === user;
+
+                  return (
+                    <motion.div
+                      key={`${m.sender}-${m.timestamp}-${idx}`}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      transition={{ duration: 0.2 }}
+                      className={`flex ${isOutgoing ? "justify-end" : "justify-start"}`}
                     >
-                      <div className="text-xs opacity-70 mb-1">
-                        {m.sender} → {m.receiver}
-                      </div>
-                      <div className="whitespace-pre-wrap break-words">
-                        {m.content || "(vazia)"}
-                      </div>
-                      {m.timestamp && (
-                        <div className="text-[10px] opacity-60 mt-1 text-right">
-                          {new Date(m.timestamp).toLocaleTimeString()}
+                      <div
+                        className={`rounded-xl px-3 py-2 max-w-[80%] ${
+                          isOutgoing
+                            ? "bg-blue-600 text-white"
+                            : "bg-gray-100 text-gray-800"
+                        }`}
+                      >
+                        <div className="text-xs opacity-70 mb-1">
+                          {m.sender} → {m.receiver}
                         </div>
-                      )}
-                    </div>
-                  </motion.div>
-                ))}
+                        <div className="whitespace-pre-wrap break-words">{m.content}</div>
+                        {m.timestamp && (
+                          <div className="text-[10px] opacity-60 mt-1 text-right">
+                            {new Date(m.timestamp).toLocaleTimeString()}
+                          </div>
+                        )}
+                      </div>
+                    </motion.div>
+                  );
+                })}
             </AnimatePresence>
 
             <div ref={bottomRef} />

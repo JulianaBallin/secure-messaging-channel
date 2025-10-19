@@ -1,24 +1,7 @@
-"""
-handlers.py
-------------
-
-Contém todos os handlers assíncronos seguros e isolados para ações do cliente:
-- register
-- login
-- list_users
-- send_message
-- send_group_message
-
-Implementa:
-- Criptografia ponta a ponta (RSA + IDEA)
-- Controle completo de grupos (criação, envio, chaves, transferência)
-- Logs de auditoria em tempo real
-- Proteção contra race conditions via asyncio.Lock
-"""
-
 import asyncio
 import json
 import datetime
+import base64
 from typing import Dict
 from sqlalchemy.orm import Session
 from backend.auth.models import User, Message, Group, GroupMember
@@ -27,19 +10,15 @@ from backend.utils.logger_config import server_logger as log
 from backend.auth.security import hash_senha as hash_password, verificar_senha as verify_password
 from backend.crypto.rsa_manager import RSAManager
 
-
-
 # ======================================================
 # LOCK GLOBAL DE USUÁRIOS
 # ======================================================
 USERS_LOCK = asyncio.Lock()
 
-
 # ======================================================
 # CADASTRO
 # ======================================================
 async def handle_register(db: Session, writer, creds: dict) -> None:
-    """Cadastra novo usuário, gera par de chaves RSA e armazena senha com hash Argon2id."""
     username = creds.get("username")
     password = creds.get("password")
 
@@ -50,29 +29,23 @@ async def handle_register(db: Session, writer, creds: dict) -> None:
         return
 
     async with USERS_LOCK:
-        # Verifica se o usuário já existe
         if db.query(User).filter(User.username == username).first():
             writer.write("❌ Usuário já existe.\n".encode())
             await writer.drain()
             log.warning(f"[REGISTER_DUPLICATE] Tentativa duplicada de {username}")
             return
 
-        # Gera par de chaves RSA (privada e pública)
         private_key_pem, public_key_pem = RSAManager.gerar_par_chaves()
-
-        # Hash da senha com Argon2
         hashed_password = hash_password(password)
 
-        # Cria e persiste o novo usuário
         new_user = User(
             username=username,
             password_hash=hashed_password,
-            public_key=public_key_pem.encode(),  # armazenar em bytes
+            public_key=public_key_pem.encode(),
         )
         db.add(new_user)
         db.commit()
 
-    # Retorna chave privada ao cliente (pode ser exibida uma única vez)
     writer.write(
         json.dumps(
             {
@@ -86,26 +59,22 @@ async def handle_register(db: Session, writer, creds: dict) -> None:
     await writer.drain()
     log.info(f"[REGISTER_OK] Novo usuário registrado: {username}")
 
-
 # ======================================================
-# LOGIN + ENTREGA DE MENSAGENS OFFLINE
+# LOGIN
 # ======================================================
 async def handle_login(db: Session, writer, creds: dict, online_users: Dict[str, asyncio.StreamWriter]):
-    """Autentica o usuário e entrega mensagens pendentes do banco."""
     username = creds.get("username")
     password = creds.get("password")
 
     if not username or not password:
         writer.write("❌ Credenciais incompletas.\n".encode())
         await writer.drain()
-        log.warning("[LOGIN_FAIL] Campos ausentes no login.")
         return None, None
 
     user = db.query(User).filter(User.username == username).first()
     if not user or not verify_password(password, user.password_hash):
         writer.write("AUTH_FAILED\n".encode())
         await writer.drain()
-        log.warning(f"[LOGIN_FAIL] Usuário inexistente ou senha incorreta: {username}")
         return None, None
 
     token = create_access_token(username)
@@ -116,41 +85,12 @@ async def handle_login(db: Session, writer, creds: dict, online_users: Dict[str,
     await writer.drain()
     log.info(f"[LOGIN_OK] {username} autenticado e online.")
 
-    # --- Mensagens offline pendentes ---
-    offline_msgs = (
-        db.query(Message)
-        .join(User, User.id == Message.receiver_id)
-        .filter(User.username == username)
-        .all()
-    )
-    if not offline_msgs:
-        return username, token
-
-    log.info(f"[OFFLINE_DELIVERY] {len(offline_msgs)} mensagens pendentes para {username}")
-    for msg in offline_msgs:
-        try:
-            payload = {
-                "from": db.query(User).get(msg.sender_id).username,
-                "content_encrypted": msg.content_encrypted,
-                "key_encrypted": msg.key_encrypted,
-                "timestamp": str(msg.timestamp),
-            }
-            writer.write((json.dumps(payload) + "\n").encode())
-            await writer.drain()
-            db.delete(msg)
-        except Exception as e:
-            log.error(f"[OFFLINE_FAIL] Erro ao entregar mensagem offline: {e}")
-    db.commit()
-
-    log.info(f"[OFFLINE_OK] Todas as mensagens pendentes entregues para {username}")
     return username, token
 
-
 # ======================================================
-# LISTAGEM DE USUÁRIOS
+# LIST USERS
 # ======================================================
 async def handle_list_users(db: Session, writer, message: dict, online_users: Dict[str, asyncio.StreamWriter]):
-    """Retorna a lista de todos os usuários e seus status."""
     try:
         token = message.get("token")
         requester = verify_access_token(token)
@@ -172,76 +112,66 @@ async def handle_list_users(db: Session, writer, message: dict, online_users: Di
         writer.write("❌ Falha ao obter lista de usuários.\n".encode())
         await writer.drain()
 
-
 # ======================================================
-# ENVIO DE MENSAGEM PRIVADA
+# ENVIO DE MENSAGEM PRIVADA (com armazenamento sempre)
 # ======================================================
-# ======================================================
-# 💌 ENVIO DE MENSAGEM PRIVADA (robusto e seguro)
-# ======================================================
-async def handle_send_message(db: Session, data: dict, online_users: Dict[str, asyncio.StreamWriter]):
-    """
-    Envia mensagens criptografadas entre usuários, garantindo que:
-    - o token seja válido
-    - o destinatário exista
-    - o socket esteja ativo antes do envio
-    - mensagens offline sejam armazenadas no banco
-    """
-    sender_token = data.get("token")
-    receiver_name = data.get("to")
-    content_encrypted = data.get("content_encrypted")
-    key_encrypted = data.get("key_encrypted")
-
+async def handle_send_message(db: Session, message: dict, online_users: Dict[str, asyncio.StreamWriter]):
     try:
-        # 🔒 Autentica o remetente via token JWT
-        sender_username = verify_access_token(sender_token)
-        if not sender_username:
-            log.error("[SEND_ERROR] Token inválido.")
+        token = message.get("token")
+        sender = verify_access_token(token)
+        receiver = message.get("to")
+        encrypted_content = message.get("content_encrypted")
+        encrypted_key = message.get("key_encrypted")
+        signature_b64 = message.get("signature")
+        content_hash = message.get("content_hash")
+
+        if not all([sender, receiver, encrypted_content, encrypted_key]):
+            log.warning(f"[SEND_FAIL] Campos ausentes em mensagem de {sender}")
             return
 
-        # ⚙️ Validação de campos
-        if not receiver_name or not content_encrypted:
-            log.warning(f"[SEND_FAIL] Campos ausentes em mensagem de {sender_username}")
+        sender_user = db.query(User).filter(User.username == sender).first()
+        receiver_user = db.query(User).filter(User.username == receiver).first()
+        if not receiver_user:
+            log.error(f"[SEND_FAIL] Destinatário {receiver} não encontrado.")
             return
 
-        # 🔍 Busca remetente e destinatário no banco
-        sender_user = db.query(User).filter_by(username=sender_username).first()
-        receiver_user = db.query(User).filter_by(username=receiver_name).first()
-
-        if not sender_user or not receiver_user:
-            log.warning(f"[SEND_FAIL] Usuário inexistente: {receiver_name}")
-            return
-
-        # 💾 Sempre salva a mensagem no banco (garantia de histórico)
+        # 💾 Sempre salva no banco (garante histórico)
         msg = Message(
             sender_id=sender_user.id,
             receiver_id=receiver_user.id,
-            content_encrypted=content_encrypted,
-            key_encrypted=key_encrypted,
+            content_encrypted=encrypted_content,
+            key_encrypted=encrypted_key,
+            content_hash=content_hash,
+            signature=(base64.b64decode(signature_b64) if signature_b64 else None),
         )
         db.add(msg)
         db.commit()
 
-        # 🔄 Verifica se o destinatário está online
-        receiver_writer = online_users.get(receiver_name)
+        # 🔄 Tenta entregar ao destinatário online
+        payload = {
+            "from": sender,
+            "to": receiver,
+            "content_encrypted": encrypted_content,
+            "key_encrypted": encrypted_key,
+            "timestamp": datetime.datetime.utcnow().isoformat(),
+        }
+        if signature_b64:
+            payload["signature"] = signature_b64
+        if content_hash:
+            payload["content_hash"] = content_hash
 
-        if receiver_writer and not receiver_writer.is_closing():
-            try:
-                payload = {
-                    "from": sender_username,
-                    "to": receiver_name,
-                    "content_encrypted": content_encrypted,
-                    "timestamp": datetime.datetime.utcnow().isoformat(),
-                }
-                receiver_writer.write((json.dumps(payload) + "\n").encode("utf-8"))
-                await receiver_writer.drain()
-                log.info(f"[SEND_OK] {sender_username} → {receiver_name}")
-            except Exception as e:
-                log.error(f"[SEND_ERROR] Falha ao enviar para {receiver_name}: {e}")
-                # Se o socket fechou, remove da lista
-                online_users.pop(receiver_name, None)
-        else:
-            log.warning(f"[SEND_WARN] {receiver_name} está offline. Mensagem armazenada no banco.")
+        async with USERS_LOCK:
+            dest_writer = online_users.get(receiver)
+            if dest_writer and not dest_writer.is_closing():
+                try:
+                    dest_writer.write((json.dumps(payload) + "\n").encode())
+                    await dest_writer.drain()
+                    log.info(f"[DELIVERED + STORED] {sender} → {receiver}")
+                except Exception as e:
+                    log.error(f"[SEND_ERROR] Falha ao enviar para {receiver}: {e}")
+                    online_users.pop(receiver, None)
+            else:
+                log.info(f"[STORED_ONLY] {receiver} offline. Mensagem armazenada.")
 
     except Exception as e:
         log.error(f"[SEND_ERROR] Falha ao enviar mensagem privada: {e}")
@@ -250,7 +180,6 @@ async def handle_send_message(db: Session, data: dict, online_users: Dict[str, a
 # ENVIO DE MENSAGEM EM GRUPO
 # ======================================================
 async def handle_send_group_message(db: Session, message: dict, online_users: Dict[str, asyncio.StreamWriter]):
-    """Envia mensagens criptografadas para todos os membros de um grupo."""
     try:
         token = message.get("token")
         sender = verify_access_token(token)
@@ -304,4 +233,4 @@ async def handle_send_group_message(db: Session, message: dict, online_users: Di
         log.info(f"[GROUP_SEND_OK] {sender} enviou mensagem ao grupo {group_name}")
 
     except Exception as e:
-        log.error(f"[GROUP_SEND_ERROR] Erro ao enviar mensagem em grupo: {e}")
+        log.error(f"[GROUP_SEND_ERROR] Erro ao enviar mensagem em grupo: {e}") 

@@ -1,11 +1,11 @@
 import asyncio
+import base64
 import ssl
 import json
 from typing import Dict
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy.orm import joinedload
 
 from backend.database.connection import SessionLocal
 from backend.server.handlers_rest import handle_register_rest, handle_login_rest
@@ -28,35 +28,21 @@ TLS_CONNECTIONS: Dict[str, Dict[str, asyncio.StreamWriter]] = {}
 
 async def ensure_tls_connection(username: str, token: str):
     """
-    🧪 TESTE: Mantém conexão TLS aberta indefinidamente (nunca fecha).
+    Mantém conexão TLS aberta (não fecha).
     """
     conn = TLS_CONNECTIONS.get(username)
-
     if conn and not conn["writer"].is_closing():
-        # Já tem conexão ativa
         return conn
 
-    # 🔗 Cria nova conexão TLS
     reader, writer = await asyncio.open_connection(TCP_HOST, TCP_PORT, ssl=SSL_CONTEXT)
     TLS_CONNECTIONS[username] = {"reader": reader, "writer": writer}
-    print(f"[TLS TEST] 🔗 Conexão TLS aberta para {username} — nunca será fechada.")
+    print(f"[TLS TEST] 🔗 Conexão TLS aberta para {username} — ativa.")
 
-    # 🔐 Envia ação de restauração de sessão
+    # Restaura sessão
     resume_payload = {"action": "resume_session", "token": token}
     writer.write(json.dumps(resume_payload).encode() + b"\n")
     await writer.drain()
 
-    # 🔄 Mantém o socket aberto pra sempre
-    async def keep_forever():
-        try:
-            while True:
-                await asyncio.sleep(1)
-        except asyncio.CancelledError:
-            pass
-
-    asyncio.create_task(keep_forever())
-
-    # 🔍 Também escuta as mensagens TLS (apenas printa)
     async def listen_tls():
         try:
             while not reader.at_eof():
@@ -69,7 +55,6 @@ async def ensure_tls_connection(username: str, token: str):
             print(f"[TLS_READ_ERROR][{username}] {e}")
 
     asyncio.create_task(listen_tls())
-
     return TLS_CONNECTIONS[username]
 
 
@@ -77,7 +62,6 @@ async def ensure_tls_connection(username: str, token: str):
 # 🫀 PING AUTOMÁTICO (KEEP-ALIVE)
 # ======================================================
 async def start_keepalive():
-    """Envia ping TLS a cada 30 segundos pra manter sessões abertas."""
     while True:
         await asyncio.sleep(30)
         for username, conn in list(TLS_CONNECTIONS.items()):
@@ -118,7 +102,6 @@ class AuthRequest(BaseModel):
 # ======================================================
 @app.post("/api/register")
 async def api_register(req: AuthRequest):
-    """Cria um novo usuário no banco de dados."""
     db = SessionLocal()
     try:
         return await handle_register_rest(db, req.dict())
@@ -128,7 +111,6 @@ async def api_register(req: AuthRequest):
 
 @app.post("/api/login")
 async def api_login(req: AuthRequest):
-    """Autentica o usuário e retorna o token JWT."""
     db = SessionLocal()
     try:
         result, token = await handle_login_rest(db, req.dict())
@@ -140,33 +122,75 @@ async def api_login(req: AuthRequest):
 
 
 # ======================================================
-# 💬 MENSAGENS - HISTÓRICO (INBOX)
+# 💬 MENSAGENS - HISTÓRICO (INBOX) com decifração condicional
 # ======================================================
 @app.get("/api/messages/inbox/{username}")
 async def api_inbox(username: str):
-    """Retorna todas as mensagens destinadas a um usuário."""
+    """
+    Retorna mensagens trocadas com o usuário.
+    Decifra **apenas** quando o usuário é o destinatário.
+    Para mensagens enviadas pelo próprio usuário (outgoing),
+    não tenta decifrar (evita erro) e marca `outgoing: true`.
+    """
+    from backend.crypto.idea_manager import IDEAManager
+
     db = SessionLocal()
     try:
         user = db.query(User).filter(User.username == username).first()
         if not user:
             raise HTTPException(status_code=404, detail=f"Usuário '{username}' não encontrado.")
 
+        # Carrega PEM da chave privada do usuário (p/ decifrar quando ele for o destinatário)
+        priv_path = f"keys/{username}_private.pem"
+        try:
+            with open(priv_path, "r") as f:
+                private_key_pem = f.read()
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail=f"Chave privada de '{username}' não encontrada em {priv_path}")
+
+        # Busca todas as mensagens enviadas/recebidas por esse usuário
         messages = (
             db.query(Message)
-            .join(User, User.id == Message.receiver_id)
-            .filter(User.username == username)
-            .options(joinedload(Message.sender))
+            .filter((Message.sender_id == user.id) | (Message.receiver_id == user.id))
+            .order_by(Message.timestamp.asc())
             .all()
         )
 
         formatted = []
         for msg in messages:
             sender_user = db.query(User).get(msg.sender_id)
+            receiver_user = db.query(User).get(msg.receiver_id)
+
+            # Define se é outgoing (eu enviei) ou incoming (eu recebi)
+            is_outgoing = sender_user and sender_user.username == username
+            content_plain = None
+
+            if not is_outgoing:
+                # Decifra APENAS quando eu sou o destinatário real
+                try:
+                    content_plain = IDEAManager().decifrar_do_chat(
+                        packet=msg.content_encrypted,
+                        cek_b64=msg.key_encrypted,
+                        destinatario=username,
+                        chave_privada_pem=private_key_pem,
+                    )
+                except Exception as e:
+                    print(f"[DECRYPT_FAIL] {msg.id} → {e}")
+                    content_plain = "(erro ao decifrar)"
+            else:
+                # Eu enviei: não tenta decifrar (CEK cifrada com a chave do outro).
+                # Se quiser, você pode retornar o ciphertext para depuração:
+                # content_plain = msg.content_encrypted
+                content_plain = None  # mantém limpo; o front pode lidar usando `outgoing: true`
+
             formatted.append({
                 "id": msg.id,
                 "sender": sender_user.username if sender_user else "Desconhecido",
-                "receiver": username,
-                "content": msg.content_encrypted or "(vazio)",
+                "receiver": receiver_user.username if receiver_user else "Desconhecido",
+                "content": content_plain,                   # somente claro se eu for destinatário
+                "content_encrypted": msg.content_encrypted, # útil se quiser exibir rótulo/depuração
+                "key_encrypted": msg.key_encrypted,
+                "outgoing": is_outgoing,
                 "timestamp": str(msg.timestamp),
             })
 
@@ -186,39 +210,60 @@ async def api_inbox(username: str):
 # ======================================================
 @app.post("/api/messages/send")
 async def api_send_message(req: Request):
-    data = await req.json()
-    print(f"[DEBUG] Dados recebidos do frontend: {data}")
+    """
+    Cifra com IDEA + RSA (E2EE) e envia ao servidor TLS com a CEK cifrada.
+    """
+    from backend.crypto.idea_manager import IDEAManager
+    from hashlib import sha256
 
-    """Recebe mensagem do frontend e repassa ao servidor TLS."""
     db = SessionLocal()
     try:
         data = await req.json()
         token = data.get("token")
         to = data.get("to")
-        content = data.get("content")
+        content = data.get("content", "")
+        signature_b64 = data.get("signature")  # opcional
 
         if not token or not to or not content:
             raise HTTPException(status_code=400, detail="Campos obrigatórios ausentes (token, to, content).")
 
-        username = verify_access_token(token)
-        print(f"[DEBUG] Token recebido: {token}")
-        print(f"[DEBUG] Usuário decodificado: {username}")
-        await ensure_tls_connection(username, token)
+        sender = verify_access_token(token)
+        if not sender:
+            raise HTTPException(status_code=401, detail="❌ Token inválido.")
+
+        receiver = db.query(User).filter(User.username == to).first()
+        if not receiver or not receiver.public_key:
+            raise HTTPException(status_code=404, detail=f"Destinatário '{to}' não encontrado ou sem chave pública.")
+
+        pubkey_pem = receiver.public_key.decode("utf-8", errors="ignore")
+
+        idea = IDEAManager()
+        content_encrypted_b64, cek_rsa_b64 = idea.cifrar_para_chat(
+            texto_plano=content,
+            remetente=sender,
+            destinatario=to,
+            chave_publica_destinatario_pem=pubkey_pem,
+        )
+
+        content_hash = sha256(content.encode("utf-8")).hexdigest()
 
         payload = {
             "action": "send_message",
             "token": token,
             "to": to,
-            "content_encrypted": content,
-            "key_encrypted": "dummy-key",  # valor placeholder
+            "content_encrypted": content_encrypted_b64,
+            "key_encrypted": cek_rsa_b64,
+            "content_hash": content_hash,
+            "signature": signature_b64,
         }
 
-        writer = TLS_CONNECTIONS[username]["writer"]
+        await ensure_tls_connection(sender, token)
+        writer = TLS_CONNECTIONS[sender]["writer"]
         writer.write(json.dumps(payload).encode() + b"\n")
         await writer.drain()
 
-        print(f"[SEND_OK] {username} → {to}")
-        return {"status": "success", "message": f"Mensagem enviada de {username} para {to}."}
+        print(f"[SEND_OK] {sender} → {to}")
+        return {"status": "success", "message": f"Mensagem enviada de {sender} para {to}."}
 
     except HTTPException:
         raise
@@ -233,7 +278,6 @@ async def api_send_message(req: Request):
 # ♻️ LIMPEZA DE CONEXÕES TLS INATIVAS
 # ======================================================
 async def cleanup_tls():
-    """Fecha conexões inativas para evitar vazamento."""
     while True:
         await asyncio.sleep(15)
         to_remove = [u for u, c in TLS_CONNECTIONS.items() if c["writer"].is_closing()]
@@ -246,7 +290,6 @@ async def cleanup_tls():
 # 🌐 WEBSOCKET (opcional futuro)
 # ======================================================
 class ConnectionManager:
-    """Gerencia conexões WebSocket com o navegador."""
     def __init__(self):
         self.active_connections: list[WebSocket] = []
 
@@ -271,7 +314,6 @@ manager = ConnectionManager()
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """Futuro canal WebSocket em tempo real."""
     await manager.connect(websocket)
     try:
         while True:
@@ -282,7 +324,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 # ======================================================
-# 🏁 EVENTO DE STARTUP
+# 🏁 STARTUP
 # ======================================================
 @app.on_event("startup")
 async def startup_event():
