@@ -97,6 +97,10 @@ class AddMemberReq(BaseModel):
     group: str
     username: str
 
+class RemoveMemberReq(BaseModel):
+    token: str
+    group: str
+    username: str
 
 # ======================================================
 # 👤 REGISTRO E LOGIN
@@ -261,7 +265,13 @@ async def api_groups_create(req: CreateGroupReq):
 
 @app.post("/api/groups/add_member")
 async def api_groups_add_member(req: AddMemberReq):
-    """Adiciona um membro a um grupo existente."""
+    """
+    Adiciona um novo membro e recriptografa a chave IDEA atual do grupo
+    para todos os membros (inclusive o novo).
+    """
+    from backend.crypto.idea_manager import IDEAManager
+    from backend.crypto.rsa_manager import RSAManager
+
     db = SessionLocal()
     try:
         requester = verify_access_token(req.token)
@@ -270,37 +280,146 @@ async def api_groups_add_member(req: AddMemberReq):
 
         group = db.query(Group).filter_by(name=req.group).first()
         user = db.query(User).filter_by(username=req.username).first()
-
-        if not group or not user:
+        if not (group and user):
             raise HTTPException(status_code=404, detail="Grupo ou usuário não encontrado.")
 
+        # 🔐 verifica admin
+        admin = db.query(User).get(group.admin_id)
+        if not admin or admin.username != requester:
+            raise HTTPException(status_code=403, detail="Apenas o admin pode adicionar membros.")
+
+        # evita duplicação
         exists = db.query(GroupMember).filter_by(group_id=group.id, user_id=user.id).first()
         if exists:
             return {"status": "ok", "message": "Usuário já é membro."}
 
+        # adiciona novo membro
         db.add(GroupMember(group_id=group.id, user_id=user.id))
         db.commit()
-        return {"status": "ok", "message": f"{req.username} adicionado ao grupo {req.group}."}
+
+        # 🔄 gera nova chave IDEA e recriptografa
+        idea = IDEAManager()
+        nova_cek_bytes = bytes.fromhex(idea.get_chave_sessao_hex())
+
+        membros = db.query(GroupMember).filter_by(group_id=group.id).all()
+        for m in membros:
+            membro_user = db.query(User).get(m.user_id)
+            if membro_user and membro_user.public_key:
+                cek_enc_b64 = RSAManager.cifrar_chave_sessao(
+                    nova_cek_bytes, membro_user.public_key.decode()
+                )
+                # salva registro simbólico para histórico
+                db.add(Message(
+                    sender_id=admin.id,
+                    receiver_id=membro_user.id,
+                    group_id=group.id,
+                    content_encrypted="(nova chave IDEA gerada)",
+                    key_encrypted=cek_enc_b64,
+                ))
+        db.commit()
+
+        return {
+            "status": "ok",
+            "message": f"{req.username} adicionado ao grupo {req.group}. Nova chave IDEA distribuída.",
+        }
     finally:
         db.close()
 
-
+# ======================================================
+# 📋 LISTAR GRUPOS DO USUÁRIO
+# ======================================================
 @app.get("/api/groups/my")
 async def api_groups_my(token: str):
-    """Retorna os grupos dos quais o usuário é membro."""
+    """Lista todos os grupos dos quais o usuário é membro."""
     db = SessionLocal()
     try:
-        me = verify_access_token(token)
-        user = db.query(User).filter_by(username=me).first()
+        username = verify_access_token(token)
+        if not username:
+            raise HTTPException(status_code=401, detail="Token inválido.")
 
+        user = db.query(User).filter_by(username=username).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuário não encontrado.")
+
+        # junta Group com GroupMember pra listar todos os grupos do usuário
         groups = (
             db.query(Group)
-            .join(GroupMember, GroupMember.group_id == Group.id)
+            .join(GroupMember, Group.id == GroupMember.group_id)
             .filter(GroupMember.user_id == user.id)
             .all()
         )
 
-        return {"groups": [{"id": g.id, "name": g.name} for g in groups]}
+        result = []
+        for g in groups:
+            is_admin = g.admin_id == user.id
+            result.append({
+                "id": g.id,
+                "name": g.name,
+                "is_admin": is_admin,
+            })
+
+        return {"groups": result}
+
+    finally:
+        db.close()
+
+
+@app.post("/api/groups/remove_member")
+async def api_groups_remove_member(req: RemoveMemberReq):
+    """
+    Remove um membro e gera uma nova chave IDEA para os membros restantes.
+    """
+    from backend.crypto.idea_manager import IDEAManager
+    from backend.crypto.rsa_manager import RSAManager
+
+    db = SessionLocal()
+    try:
+        requester = verify_access_token(req.token)
+        if not requester:
+            raise HTTPException(status_code=401, detail="Token inválido.")
+
+        group = db.query(Group).filter_by(name=req.group).first()
+        user = db.query(User).filter_by(username=req.username).first()
+        if not (group and user):
+            raise HTTPException(status_code=404, detail="Grupo ou usuário não encontrado.")
+
+        # 🔐 apenas admin pode remover
+        admin = db.query(User).get(group.admin_id)
+        if not admin or admin.username != requester:
+            raise HTTPException(status_code=403, detail="Apenas o admin pode remover membros.")
+
+        gm = db.query(GroupMember).filter_by(group_id=group.id, user_id=user.id).first()
+        if not gm:
+            raise HTTPException(status_code=404, detail="Usuário não é membro do grupo.")
+
+        db.delete(gm)
+        db.commit()
+
+        # 🔄 gera nova chave IDEA
+        idea = IDEAManager()
+        nova_cek_bytes = bytes.fromhex(idea.get_chave_sessao_hex())
+
+        # 🔁 recriptografa a nova chave IDEA pra todos os membros restantes
+        membros_restantes = db.query(GroupMember).filter_by(group_id=group.id).all()
+        for m in membros_restantes:
+            membro_user = db.query(User).get(m.user_id)
+            if membro_user and membro_user.public_key:
+                cek_enc_b64 = RSAManager.cifrar_chave_sessao(
+                    nova_cek_bytes, membro_user.public_key.decode()
+                )
+                db.add(Message(
+                    sender_id=admin.id,
+                    receiver_id=membro_user.id,
+                    group_id=group.id,
+                    content_encrypted="(chave IDEA atualizada após remoção)",
+                    key_encrypted=cek_enc_b64,
+                ))
+        db.commit()
+
+        return {
+            "status": "ok",
+            "message": f"{req.username} removido de {req.group}. Nova chave IDEA distribuída.",
+        }
     finally:
         db.close()
 
@@ -356,6 +475,63 @@ async def api_groups_send(req: Request):
     finally:
         db.close()
 
+@app.post("/api/groups/regenerate_key")
+async def api_groups_regenerate_key(req: Request):
+    """
+    Regenera a chave IDEA do grupo (manual key rotation).
+    Apenas o admin pode chamar.
+    """
+    from backend.crypto.idea_manager import IDEAManager
+    from backend.crypto.rsa_manager import RSAManager
+
+    db = SessionLocal()
+    try:
+        data = await req.json()
+        token = data.get("token")
+        group_name = data.get("group")
+
+        if not token or not group_name:
+            raise HTTPException(status_code=400, detail="Campos obrigatórios ausentes.")
+
+        requester = verify_access_token(token)
+        if not requester:
+            raise HTTPException(status_code=401, detail="Token inválido.")
+
+        group = db.query(Group).filter_by(name=group_name).first()
+        if not group:
+            raise HTTPException(status_code=404, detail="Grupo não encontrado.")
+
+        admin = db.query(User).get(group.admin_id)
+        if not admin or admin.username != requester:
+            raise HTTPException(status_code=403, detail="Apenas o admin pode regenerar a chave.")
+
+        # 🔄 gera nova chave IDEA (nova CEK)
+        idea = IDEAManager()
+        nova_cek_bytes = bytes.fromhex(idea.get_chave_sessao_hex())
+
+        membros = db.query(GroupMember).filter_by(group_id=group.id).all()
+        for m in membros:
+            membro_user = db.query(User).get(m.user_id)
+            if membro_user and membro_user.public_key:
+                cek_enc_b64 = RSAManager.cifrar_chave_sessao(
+                    nova_cek_bytes, membro_user.public_key.decode()
+                )
+                db.add(Message(
+                    sender_id=admin.id,
+                    receiver_id=membro_user.id,
+                    group_id=group.id,
+                    content_encrypted="(chave IDEA regenerada manualmente pelo admin)",
+                    key_encrypted=cek_enc_b64,
+                ))
+
+        db.commit()
+        return {
+            "status": "ok",
+            "message": f"Nova chave IDEA regenerada para o grupo '{group_name}' e distribuída a todos os membros.",
+        }
+
+    finally:
+        db.close()
 
 @app.get("/api/groups/{group_name}/messages")
 async def api_groups_messages(group_name: str, token: str):
@@ -384,12 +560,16 @@ async def api_groups_messages(group_name: str, token: str):
         for msg in msgs:
             sender = db.query(User).get(msg.sender_id)
             try:
-                plain = IDEAManager().decifrar_do_chat(
-                    packet=msg.content_encrypted,
-                    cek_b64=msg.key_encrypted,
-                    destinatario=user_name,
-                    chave_privada_pem=private_key_pem,
-                )
+                # ⚙️ Detecta mensagens administrativas e mostra texto fixo
+                if msg.content_encrypted.startswith("("):
+                    plain = "🔑 Atualização de segurança no grupo"
+                else:
+                    plain = IDEAManager().decifrar_do_chat(
+                        packet=msg.content_encrypted,
+                        cek_b64=msg.key_encrypted,
+                        destinatario=user_name,
+                        chave_privada_pem=private_key_pem,
+                    )
             except Exception as e:
                 print(f"[GROUP_DEC_ERR] {e}")
                 plain = "(erro ao decifrar)"

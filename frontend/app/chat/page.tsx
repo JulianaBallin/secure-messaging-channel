@@ -20,6 +20,7 @@ interface MessageItem {
 interface Group {
   id: number;
   name: string;
+  is_admin?: boolean;
 }
 
 interface GroupMessage {
@@ -42,8 +43,10 @@ export default function ChatPage() {
   const [newGroup, setNewGroup] = useState("");
   const [newMember, setNewMember] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  const token =
+    typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
   // 🔐 login check
   useEffect(() => {
@@ -60,13 +63,7 @@ export default function ChatPage() {
     try {
       const data = await fetchJSON(`/api/messages/inbox/${user}`);
       const fetched = data.messages || [];
-      setMessages((prev) => {
-        const newMsgs = fetched.filter(
-          (m: MessageItem) => !prev.some((p) => p.id === m.id)
-        );
-        return [...prev, ...newMsgs];
-      });
-
+      setMessages(fetched);
       scrollToBottom();
     } catch (e) {
       console.error("Erro ao carregar mensagens privadas:", e);
@@ -99,7 +96,7 @@ export default function ChatPage() {
         }),
       });
 
-      // 🔁 espelha no chat imediatamente
+      // espelha localmente (mirroring)
       setMessages((prev) => [
         ...prev,
         {
@@ -165,7 +162,7 @@ export default function ChatPage() {
         }),
       });
 
-      // 🔁 espelha a própria mensagem localmente
+      // eco local
       setGroupMessages((prev) => [
         ...prev,
         {
@@ -214,6 +211,41 @@ export default function ChatPage() {
       alert("✅ Membro adicionado com sucesso!");
     } catch {
       alert("❌ Erro ao adicionar membro.");
+    }
+  };
+
+  // 🔽 Remove membro
+  const removeMember = async () => {
+    if (!selectedGroup || !newMember.trim() || !token) return;
+    try {
+      await fetchJSON(`/api/groups/remove_member`, {
+        method: "POST",
+        body: JSON.stringify({
+          token,
+          group: selectedGroup,
+          username: newMember,
+        }),
+      });
+      setNewMember("");
+      alert("✅ Membro removido com sucesso!");
+    } catch (e) {
+      console.error(e);
+      alert("❌ Erro ao remover membro.");
+    }
+  };
+
+  // 🔑 Regenera chave
+  const regenerateKey = async () => {
+    if (!selectedGroup || !token) return;
+    try {
+      await fetchJSON(`/api/groups/regenerate_key`, {
+        method: "POST",
+        body: JSON.stringify({ token, group: selectedGroup }),
+      });
+      alert("🔑 Chave do grupo regenerada com sucesso!");
+    } catch (e) {
+      console.error(e);
+      alert("❌ Erro ao regenerar chave do grupo.");
     }
   };
 
@@ -301,9 +333,10 @@ export default function ChatPage() {
                             : "bg-gray-100 text-gray-800"
                         }`}
                       >
+                        <div className="text-xs opacity-70 mb-1">{m.sender}</div>
                         <div>{m.content}</div>
                         <div className="text-[10px] opacity-60 mt-1 text-right">
-                          {new Date(m.timestamp || "").toLocaleTimeString()}
+                          {new Date(m.timestamp || "").toLocaleTimeString()} ✅
                         </div>
                       </div>
                     </motion.div>
@@ -351,7 +384,11 @@ export default function ChatPage() {
                 {groups.map((g) => (
                   <Button
                     key={g.id}
-                    onClick={() => setSelectedGroup(g.name)}
+                    onClick={() => {
+                      setSelectedGroup(g.name);
+                      setIsAdmin(g.is_admin || false);
+                      loadGroupMessages(g.name);
+                    }}
                     variant={selectedGroup === g.name ? "default" : "outline"}
                   >
                     {g.name}
@@ -365,16 +402,32 @@ export default function ChatPage() {
                     💬 Grupo: {selectedGroup}
                   </h2>
 
-                  <div className="flex gap-2 mb-2">
-                    <Input
-                      placeholder="Adicionar membro..."
-                      value={newMember}
-                      onChange={(e) => setNewMember(e.target.value)}
-                    />
-                    <Button onClick={addMember} variant="outline">
-                      ➕
-                    </Button>
-                  </div>
+                  {isAdmin && (
+                    <div className="flex flex-wrap gap-2 mb-2">
+                      <Input
+                        placeholder="Gerenciar membro..."
+                        value={newMember}
+                        onChange={(e) => setNewMember(e.target.value)}
+                        className="flex-1"
+                      />
+                      <Button onClick={addMember} variant="outline">
+                        ➕ Adicionar
+                      </Button>
+                      <Button
+                        onClick={removeMember}
+                        variant="outline"
+                        className="text-red-600 border-red-600"
+                      >
+                        ❌ Remover
+                      </Button>
+                      <Button
+                        onClick={regenerateKey}
+                        className="bg-yellow-500 hover:bg-yellow-600 text-white"
+                      >
+                        🔑 Regenerar Chave
+                      </Button>
+                    </div>
+                  )}
 
                   <div className="h-80 overflow-y-auto bg-white border rounded-xl p-4 space-y-3">
                     {groupMessages.length === 0 && (
@@ -389,7 +442,9 @@ export default function ChatPage() {
                           initial={{ opacity: 0, y: 10 }}
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: -10 }}
-                          className={`flex ${m.from === user ? "justify-end" : "justify-start"}`}
+                          className={`flex ${
+                            m.from === user ? "justify-end" : "justify-start"
+                          }`}
                         >
                           <div
                             className={`rounded-xl px-3 py-2 max-w-[80%] ${
@@ -398,7 +453,9 @@ export default function ChatPage() {
                                 : "bg-gray-100 text-gray-800"
                             }`}
                           >
-                            <div className="text-xs opacity-70 mb-1">{m.from}</div>
+                            <div className="text-xs font-semibold mb-1">
+                              {m.from === user ? "Você" : m.from}
+                            </div>
                             <div>{m.content}</div>
                             <div className="text-[10px] opacity-60 mt-1 text-right">
                               {new Date(m.timestamp).toLocaleTimeString()}
