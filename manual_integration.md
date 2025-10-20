@@ -120,7 +120,7 @@ Acesse o sistema em:
 ## 🚫 Limitação Atual
 
 > 🕒 O **cadastro via interface** ainda **não está funcional** devido ao tempo reduzido de implementação.  
-> Para testar, **crie os usuários diretamente no banco SQLite** e depois faça **login normalmente** pela interface.
+> Para testar, **crie os usuários diretamente no banco SQLite** (checar manual_bd.MD) e depois faça **login normalmente** pela interface.
 
 ---
 
