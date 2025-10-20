@@ -14,7 +14,7 @@ from backend.auth.auth_jwt import verify_access_token
 # ======================================================
 # 🔐 CONFIGURAÇÃO DE REDE (TLS)
 # ======================================================
-TCP_HOST = "127.0.0.1"
+TCP_HOST = "172.25.48.1"
 TCP_PORT = 8888
 SSL_CONTEXT = ssl.create_default_context()
 SSL_CONTEXT.check_hostname = False
