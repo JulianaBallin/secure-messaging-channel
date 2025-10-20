@@ -76,7 +76,7 @@ python backend/server/server.py
 
 #### Rodar a API (FastAPI)
 ```bash
-python uvicorn backend.adapter_api:app --host 127.0.0.1 --port 8000 --reload
+uvicorn backend.adapter_api:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 > ⚠️ **Importante:** o servidor TLS deve SEMPRE estar rodando **antes** da API Adapter (FastAPI).
