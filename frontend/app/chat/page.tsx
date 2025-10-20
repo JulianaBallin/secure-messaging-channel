@@ -59,10 +59,11 @@ export default function ChatPage() {
   // 💌 CHAT PRIVADO
   // =======================================================
   const loadInbox = async () => {
-    if (!user || !receiver) return;
+    if (!user) return;
     try {
-      const data = await fetchJSON(`/api/messages/inbox/${user}/${receiver}`);
-      setMessages(data.messages || []);
+      const data = await fetchJSON(`/api/messages/inbox/${user}`);
+      const fetched = data.messages || [];
+      setMessages(fetched);
       scrollToBottom();
     } catch (e) {
       console.error("Erro ao carregar mensagens privadas:", e);
@@ -297,15 +298,6 @@ export default function ChatPage() {
           {/* PRIVADO */}
           {mode === "private" && (
             <>
-            <div className="flex gap-2">
-              <Button onClick={async () => {
-                const data = await fetchJSON(`/api/users/all`);
-                alert("Usuários cadastrados:\n" + data.users.join(", "));
-              }} variant="outline">
-                👥 Ver Contatos
-              </Button>
-            </div>
-
               <div className="flex gap-2">
                 <Input
                   placeholder="Destinatário"
@@ -409,17 +401,7 @@ export default function ChatPage() {
                   <h2 className="text-lg font-semibold text-gray-700">
                     💬 Grupo: {selectedGroup}
                   </h2>
-                  <Button
-                    onClick={async () => {
-                      const data = await fetchJSON(`/api/groups/${selectedGroup}/members?token=${token}`);
-                      alert(
-                        `👑 Admin: ${data.admin}\n\n👥 Membros:\n${data.members.join("\n")}`
-                      );
-                    }}
-                    variant="outline"
-                  >
-                    📋 Ver Membros
-                  </Button>
+
                   {isAdmin && (
                     <div className="flex flex-wrap gap-2 mb-2">
                       <Input

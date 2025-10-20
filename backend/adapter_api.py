@@ -192,69 +192,6 @@ async def api_inbox(username: str):
     finally:
         db.close()
 
-@app.get("/api/messages/inbox/{username}/{contact}")
-async def api_inbox_contact(username: str, contact: str):
-    """Retorna apenas mensagens entre o usuário e o contato especificado."""
-    from backend.crypto.idea_manager import IDEAManager
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter_by(username=username).first()
-        contact_user = db.query(User).filter_by(username=contact).first()
-
-        if not user or not contact_user:
-            raise HTTPException(status_code=404, detail="Usuário ou contato não encontrado.")
-
-        priv_path = f"keys/{username}_private.pem"
-        try:
-            with open(priv_path, "r") as f:
-                private_key_pem = f.read()
-        except FileNotFoundError:
-            raise HTTPException(status_code=404, detail=f"Chave privada não encontrada para {username}")
-
-        # 🔎 Busca mensagens apenas entre os dois
-        msgs = (
-            db.query(Message)
-            .filter(
-                ((Message.sender_id == user.id) & (Message.receiver_id == contact_user.id)) |
-                ((Message.sender_id == contact_user.id) & (Message.receiver_id == user.id))
-            )
-            .filter(Message.group_id == None)
-            .order_by(Message.timestamp.asc())
-            .all()
-        )
-
-        formatted = []
-        for msg in msgs:
-            sender = db.query(User).get(msg.sender_id)
-            is_outgoing = sender.username == username
-
-            if not is_outgoing:
-                try:
-                    content_plain = IDEAManager().decifrar_do_chat(
-                        packet=msg.content_encrypted,
-                        cek_b64=msg.key_encrypted,
-                        destinatario=username,
-                        chave_privada_pem=private_key_pem,
-                    )
-                except Exception:
-                    content_plain = "(erro ao decifrar)"
-            else:
-                content_plain = msg.content_encrypted  # ou None, se preferir
-
-            formatted.append({
-                "id": msg.id,
-                "sender": sender.username,
-                "receiver": contact,
-                "content": content_plain,
-                "outgoing": is_outgoing,
-                "timestamp": str(msg.timestamp),
-            })
-
-        return {"messages": formatted}
-
-    finally:
-        db.close()
-
 
 # ======================================================
 # 💌 ENVIO PRIVADO
@@ -645,49 +582,5 @@ async def api_groups_messages(group_name: str, token: str):
             })
 
         return {"messages": formatted}
-    finally:
-        db.close()
-
-# ======================================================
-# 📇 LISTAGEM DE USUÁRIOS E MEMBROS DE GRUPO
-# ======================================================
-
-@app.get("/api/users/all")
-async def api_users_all():
-    """Retorna todos os usuários cadastrados."""
-    db = SessionLocal()
-    try:
-        users = db.query(User).all()
-        return {"users": [u.username for u in users]}
-    finally:
-        db.close()
-
-
-@app.get("/api/groups/{group_name}/members")
-async def api_group_members(group_name: str, token: str):
-    """Retorna os membros de um grupo e o admin."""
-    db = SessionLocal()
-    try:
-        requester = verify_access_token(token)
-        if not requester:
-            raise HTTPException(status_code=401, detail="Token inválido.")
-        
-        group = db.query(Group).filter_by(name=group_name).first()
-        if not group:
-            raise HTTPException(status_code=404, detail="Grupo não encontrado.")
-
-        admin = db.query(User).get(group.admin_id)
-        members = db.query(GroupMember).filter_by(group_id=group.id).all()
-
-        member_list = []
-        for m in members:
-            user = db.query(User).get(m.user_id)
-            member_list.append(user.username)
-
-        return {
-            "group": group_name,
-            "admin": admin.username if admin else None,
-            "members": member_list,
-        }
     finally:
         db.close()
