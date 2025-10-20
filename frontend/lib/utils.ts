@@ -16,7 +16,7 @@ export function cn(...inputs: ClassValue[]) {
  */
 export const API_BASE =
   (typeof window !== "undefined" && process.env.NEXT_PUBLIC_API_BASE) ||
-  "172.25.48.1:8000";
+  "http://127.0.0.1:8000";
 
 /**
  * Função padrão de requisições JSON autenticadas.
