@@ -86,7 +86,8 @@ def add_member(db, username: str, group_name: str):
 # ======================================================
 @safe_db_operation
 def remove_member(db, username: str, group_name: str):
-    """Remove membro do grupo e executa rotação da CEK de grupo com auditoria."""
+    """Remove membro do grupo, transfere admin se necessário e rotaciona CEK."""
+    # 🔍 Localiza membro e grupo
     member = (
         db.query(GroupMember)
         .join(Group)
@@ -96,26 +97,46 @@ def remove_member(db, username: str, group_name: str):
     if not member:
         raise ValueError("Membro ou grupo não encontrado.")
 
+    group = db.query(Group).filter_by(name=group_name).first()
+    if not group:
+        raise ValueError("Grupo não encontrado.")
+
+    # ⚙️ Remove o membro
     db.delete(member)
     db.commit()
     dblog.info(f"[REMOVE_MEMBER] {username} removido do grupo {group_name}")
 
-    # 🔁 ROTACIONA CEK
-    group = db.query(Group).filter_by(name=group_name).first()
-    if not group:
-        return
-
+    # 🔎 Lista membros ativos após a remoção
     membros_ativos = [m.user for m in group.members]
     if not membros_ativos:
         dblog.warning(f"[ROTATION_ABORT] Grupo {group_name} sem membros ativos.")
         return
 
-    # 1️⃣ Nova CEK IDEA (16 bytes)
-    nova_cek = IDEAManager.gerar_chave()
-    cek_fingerprint = sha256(nova_cek if isinstance(nova_cek, bytes) else nova_cek.encode()).hexdigest()
-    dblog.info(f"[GROUP_CEK_ROTATION] Fingerprint nova CEK={cek_fingerprint} para {group_name}")
+    # 👑 Se o admin atual foi removido, transfere para o membro mais antigo
+    admin_user = db.query(User).get(group.admin_id)
+    if admin_user and admin_user.username == username:
+        novo_admin_entry = (
+            db.query(GroupMember)
+            .filter_by(group_id=group.id)
+            .order_by(GroupMember.joined_at.asc())  # usa a data de entrada no grupo
+            .first()
+        )
 
-    # 2️⃣ Criptografa CEK para cada membro ativo
+        if novo_admin_entry:
+            novo_admin = db.query(User).get(novo_admin_entry.user_id)
+            group.admin_id = novo_admin.id
+            db.commit()
+            dblog.info(f"[ADMIN_TRANSFER] Novo admin do grupo {group_name}: {novo_admin.username}")
+        else:
+            dblog.warning(f"[NO_ADMIN_CANDIDATE] Grupo {group_name} ficou sem membros elegíveis para admin.")
+
+    # 🔁 Rotaciona CEK para os membros restantes
+    nova_cek = IDEAManager.gerar_chave()
+    cek_fingerprint = sha256(
+        nova_cek if isinstance(nova_cek, bytes) else nova_cek.encode()
+    ).hexdigest()
+    dblog.info(f"[GROUP_CEK_ROTATION] Nova CEK gerada para {group_name} | SHA256={cek_fingerprint}")
+
     for membro in membros_ativos:
         public_key_dest = (
             membro.public_key.decode() if isinstance(membro.public_key, bytes) else membro.public_key
@@ -133,7 +154,7 @@ def remove_member(db, username: str, group_name: str):
         )
 
     db.commit()
-    dblog.info(f"[GROUP_CEK_ROTATION_DONE] Nova CEK rotacionada e distribuída para grupo {group_name}.")
+    dblog.info(f"[GROUP_CEK_ROTATION_DONE] CEK rotacionada e distribuída após remoção de {username}.")
 
 
 # ======================================================
