@@ -239,7 +239,16 @@ async def api_inbox_contact(username: str, contact: str):
                 except Exception:
                     content_plain = "(erro ao decifrar)"
             else:
-                content_plain = msg.content_encrypted  # ou None, se preferir
+                # 🔓 Mostra também o texto decifrado para o remetente
+                try:
+                    content_plain = IDEAManager().decifrar_do_chat(
+                        packet=msg.content_encrypted,
+                        cek_b64=msg.key_encrypted,
+                        destinatario=username,  # o remetente pode usar sua própria chave
+                        chave_privada_pem=private_key_pem,
+                    )
+                except Exception:
+                    content_plain = "(erro ao exibir mensagem enviada)"
 
             formatted.append({
                 "id": msg.id,
@@ -284,6 +293,26 @@ async def api_send_message(req: Request):
             destinatario=to,
             chave_publica_destinatario_pem=pubkey_pem,
         )
+
+        # 🔁 Gera uma versão cifrada pro remetente também
+        sender_user = db.query(User).filter(User.username == sender).first()
+        if sender_user and sender_user.public_key:
+            pubkey_sender_pem = sender_user.public_key.decode("utf-8", errors="ignore")
+            content_encrypted_self_b64, cek_rsa_self_b64 = idea.cifrar_para_chat(
+                texto_plano=content,
+                remetente=sender,
+                destinatario=sender,
+                chave_publica_destinatario_pem=pubkey_sender_pem,
+            )
+            # Armazena no banco a mensagem pro remetente ler depois
+            db.add(Message(
+                sender_id=sender_user.id,
+                receiver_id=sender_user.id,
+                content_encrypted=content_encrypted_self_b64,
+                key_encrypted=cek_rsa_self_b64,
+            ))
+            db.commit()
+
 
         await ensure_tls_connection(sender, token)
         writer = TLS_CONNECTIONS[sender]["writer"]
@@ -688,5 +717,63 @@ async def api_group_members(group_name: str, token: str):
             "admin": admin.username if admin else None,
             "members": member_list,
         }
+    finally:
+        db.close()
+
+@app.post("/api/groups/leave")
+async def api_groups_leave(req: Request):
+    """
+    Permite que um membro (inclusive o admin) saia do grupo.
+    Se o admin sair, o cargo é transferido automaticamente
+    para o membro mais antigo do grupo.
+    """
+    db = SessionLocal()
+    try:
+        data = await req.json()
+        token = data.get("token")
+        group_name = data.get("group")
+
+        requester = verify_access_token(token)
+        if not requester:
+            raise HTTPException(status_code=401, detail="Token inválido.")
+
+        group = db.query(Group).filter_by(name=group_name).first()
+        user = db.query(User).filter_by(username=requester).first()
+
+        if not group or not user:
+            raise HTTPException(status_code=404, detail="Grupo ou usuário não encontrado.")
+
+        # verifica se é membro
+        membership = db.query(GroupMember).filter_by(group_id=group.id, user_id=user.id).first()
+        if not membership:
+            raise HTTPException(status_code=404, detail="Usuário não é membro deste grupo.")
+
+        # remove o membro
+        db.delete(membership)
+        db.commit()
+
+        # caso o admin saia, transfere a liderança
+        if group.admin_id == user.id:
+            next_member = (
+                db.query(GroupMember)
+                .filter(GroupMember.group_id == group.id)
+                .order_by(GroupMember.id.asc())  # mais antigo (menor ID)
+                .first()
+            )
+            if next_member:
+                group.admin_id = next_member.user_id
+                db.commit()
+                new_admin = db.query(User).get(next_member.user_id)
+                msg = f"👑 {new_admin.username} agora é o novo admin de {group.name}."
+            else:
+                # se o último sair, apaga o grupo
+                db.delete(group)
+                db.commit()
+                msg = f"🗑️ O grupo {group.name} foi excluído (sem membros restantes)."
+        else:
+            msg = f"✅ {user.username} saiu do grupo {group.name}."
+
+        return {"status": "ok", "message": msg}
+
     finally:
         db.close()

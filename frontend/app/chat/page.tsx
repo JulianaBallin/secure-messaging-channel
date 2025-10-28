@@ -35,6 +35,7 @@ export default function ChatPage() {
   const [mode, setMode] = useState<"private" | "group">("private");
   const [user, setUser] = useState<string | null>(null);
   const [receiver, setReceiver] = useState("");
+  const [contacts, setContacts] = useState<string[]>([]);
   const [text, setText] = useState("");
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -58,10 +59,10 @@ export default function ChatPage() {
   // =======================================================
   // 💌 CHAT PRIVADO
   // =======================================================
-  const loadInbox = async () => {
-    if (!user || !receiver) return;
+  const loadInboxFor = async (contactName: string) => {
+    if (!user || !contactName) return;
     try {
-      const data = await fetchJSON(`/api/messages/inbox/${user}/${receiver}`);
+      const data = await fetchJSON(`/api/messages/inbox/${user}/${contactName}`);
       setMessages(data.messages || []);
       scrollToBottom();
     } catch (e) {
@@ -69,15 +70,22 @@ export default function ChatPage() {
     }
   };
 
-  const scrollToBottom = () =>
-    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
 
+  const scrollToBottom = () => {
+    // Evita rolagem forçada em loop
+    requestAnimationFrame(() =>
+      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
+    );
+  };
+
+  // Atualiza apenas quando há um contato selecionado
   useEffect(() => {
-    if (mode !== "private" || !user) return;
-    loadInbox();
-    const id = setInterval(loadInbox, 4000);
+    if (mode !== "private" || !user || !receiver) return;
+    loadInboxFor(receiver); // chama a versão que recebe o contato
+    const id = setInterval(() => loadInboxFor(receiver), 2000); // menor delay, mas controlado
     return () => clearInterval(id);
-  }, [user, mode]);
+  }, [user, mode, receiver]);
+
 
   const sendPrivate = async () => {
     if (!user || !receiver || !text.trim()) {
@@ -296,80 +304,121 @@ export default function ChatPage() {
 
           {/* PRIVADO */}
           {mode === "private" && (
-            <>
-            <div className="flex gap-2">
-              <Button onClick={async () => {
-                const data = await fetchJSON(`/api/users/all`);
-                alert("Usuários cadastrados:\n" + data.users.join(", "));
-              }} variant="outline">
-                👥 Ver Contatos
-              </Button>
-            </div>
-
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Destinatário"
-                  value={receiver}
-                  onChange={(e) => setReceiver(e.target.value)}
-                />
-                <Button onClick={loadInbox} variant="outline">
-                  Atualizar
-                </Button>
-              </div>
-
-              <div className="h-80 overflow-y-auto bg-white border rounded-xl p-4 space-y-3">
-                {messages.length === 0 && (
-                  <p className="text-sm text-gray-500 text-center">
-                    Nenhuma mensagem ainda 👇
-                  </p>
-                )}
-                <AnimatePresence>
-                  {messages.map((m, i) => (
-                    <motion.div
-                      key={m.id ?? i}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      className={`flex ${
-                        m.sender === user ? "justify-end" : "justify-start"
-                      }`}
-                    >
-                      <div
-                        className={`rounded-xl px-3 py-2 max-w-[80%] ${
-                          m.sender === user
-                            ? "bg-blue-600 text-white"
-                            : "bg-gray-100 text-gray-800"
+            <div className="flex h-96 bg-white border rounded-xl overflow-hidden">
+              {/* 🧭 LISTA DE CONTATOS */}
+              <div className="w-[14rem] shrink-0 border-r bg-gray-50 flex flex-col">
+                <div className="p-2 flex justify-between items-center border-b">
+                  <span className="font-semibold text-gray-700">Contatos</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={async () => {
+                      const data = await fetchJSON(`/api/users/all`);
+                      // filtra o próprio usuário
+                      const filtered = data.users.filter((u: string) => u !== user);
+                      setContacts(filtered);
+                    }}
+                  >
+                    🔄 Atualizar
+                  </Button>
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                  {contacts.length === 0 ? (
+                    <p className="text-sm text-gray-500 text-center mt-4">
+                      Nenhum contato carregado.
+                    </p>
+                  ) : (
+                    contacts.map((c) => (
+                      <button
+                        key={c}
+                        onClick={() => {
+                          setReceiver(c);
+                          loadInboxFor(c);
+                        }}
+                        className={`w-full text-left px-3 py-2 hover:bg-gray-200 ${
+                          receiver === c ? "bg-blue-100 font-semibold" : ""
                         }`}
                       >
-                        <div className="text-xs opacity-70 mb-1">{m.sender}</div>
-                        <div>{m.content}</div>
-                        <div className="text-[10px] opacity-60 mt-1 text-right">
-                          {new Date(m.timestamp || "").toLocaleTimeString()} ✅
-                        </div>
-                      </div>
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
-                <div ref={bottomRef} />
+                        {c}
+                      </button>
+                    ))
+                  )}
+                </div>
               </div>
 
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Digite sua mensagem..."
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && sendPrivate()}
-                />
-                <Button
-                  onClick={sendPrivate}
-                  disabled={loading}
-                  className="bg-blue-600 hover:bg-blue-700 text-white"
-                >
-                  {loading ? "Enviando..." : "Enviar"}
-                </Button>
+              {/* 💬 ÁREA DE MENSAGENS */}
+              <div className="flex-1 flex flex-col">
+                {receiver ? (
+                  <>
+                    <div className="p-3 border-b flex justify-between items-center bg-gray-50">
+                      <h2 className="font-semibold text-gray-700">💬 {receiver}</h2>
+                      <Button size="sm" variant="outline" onClick={() => loadInboxFor(receiver)}>
+                        🔄
+                      </Button>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                      {messages.length === 0 && (
+                        <p className="text-sm text-gray-500 text-center">
+                          Nenhuma mensagem ainda 👇
+                        </p>
+                      )}
+                      <AnimatePresence>
+                        {messages.map((m, i) => (
+                          <motion.div
+                            key={m.id ?? i}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -10 }}
+                            className={`flex ${
+                              m.sender === user ? "justify-end" : "justify-start"
+                            }`}
+                          >
+                            <div
+                              className={`rounded-xl px-3 py-2 max-w-[80%] ${
+                                m.sender === user
+                                  ? "bg-blue-600 text-white"
+                                  : "bg-gray-100 text-gray-800"
+                              }`}
+                            >
+                              <div className="text-xs opacity-70 mb-1">{m.sender}</div>
+                              <div>{m.content}</div>
+                              <div className="text-[10px] opacity-60 mt-1 text-right">
+                                {new Date(m.timestamp || "").toLocaleTimeString()} ✅
+                              </div>
+                            </div>
+                          </motion.div>
+                        ))}
+                      </AnimatePresence>
+                      <div ref={bottomRef} />
+                    </div>
+
+                    {/* INPUT */}
+                    <div className="p-2 border-t flex gap-2 bg-gray-50">
+                      <Input
+                        placeholder="Digite sua mensagem..."
+                        value={text}
+                        onChange={(e) => setText(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && sendPrivate()}
+                      />
+                      <Button
+                        onClick={sendPrivate}
+                        disabled={loading}
+                        className="bg-blue-600 hover:bg-blue-700 text-white"
+                      >
+                        {loading ? "Enviando..." : "Enviar"}
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex-1 flex items-center justify-center text-gray-400">
+                    👈 Escolha um contato para conversar
+                  </div>
+                )}
               </div>
-            </>
+            </div>
           )}
+
 
           {/* GRUPOS */}
           {mode === "group" && (
@@ -448,6 +497,38 @@ export default function ChatPage() {
                       </Button>
                     </div>
                   )}
+
+                  {/* 🚪 Botão para sair do grupo (admin ou membro comum) */}
+                  <div className="mt-2">
+                    <Button
+                      onClick={async () => {
+                        if (!selectedGroup || !token) return;
+                        const confirmLeave = confirm(
+                          "Tem certeza que deseja sair do grupo? Se for o admin, o cargo será transferido automaticamente."
+                        );
+                        if (!confirmLeave) return;
+
+                        try {
+                          const res = await fetchJSON(`/api/groups/leave`, {
+                            method: "POST",
+                            body: JSON.stringify({ token, group: selectedGroup }),
+                          });
+                          alert(res.message || "👋 Você saiu do grupo.");
+                          // Atualiza lista de grupos
+                          loadGroups();
+                          setSelectedGroup(null);
+                        } catch (e) {
+                          console.error(e);
+                          alert("❌ Erro ao sair do grupo.");
+                        }
+                      }}
+                      variant="outline"
+                      className="text-red-600 border-red-600"
+                    >
+                      🚪 Sair do grupo
+                    </Button>
+                  </div>
+
 
                   <div className="h-80 overflow-y-auto bg-white border rounded-xl p-4 space-y-3">
                     {groupMessages.length === 0 && (
