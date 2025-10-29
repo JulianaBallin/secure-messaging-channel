@@ -122,7 +122,7 @@ async def send_encrypted_message(username: str, token: str, host: str, port: int
     }
 
     # ==============================
-    # Enviar mensagem criptografada
+    # Enviar mensagem criptografada (com salvamento local)
     # ==============================
     try:
         reader, writer = await asyncio.open_connection(host, port, ssl=ssl_context)
@@ -133,10 +133,33 @@ async def send_encrypted_message(username: str, token: str, host: str, port: int
         await writer.drain()
         await asyncio.sleep(0.3)
 
+        # Envia a mensagem ao servidor
         writer.write((json.dumps(msg_payload) + "\n").encode("utf-8"))
         await writer.drain()
 
         print(f"✅ Mensagem enviada com sucesso para {receiver} (E2EE ativa).")
+
+        # ==============================
+        # 💾 Salvar cópia local criptografada
+        # ==============================
+        import time
+
+        local_data = {
+            "from": username,
+            "to": receiver,
+            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "content_encrypted": packet,
+            "key_encrypted": cek_b64,
+        }
+
+        # Nome único por timestamp
+        filename = f"{username}_to_{receiver}_{int(time.time())}.json"
+        filepath = os.path.join("messages", filename)
+
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(local_data, f, ensure_ascii=False, indent=2)
+
+        print(f"💾 Mensagem criptografada salva localmente em: {filepath}")
 
         writer.close()
         await writer.wait_closed()
@@ -168,7 +191,7 @@ def read_and_decrypt_messages(username: str):
     messages_dir = "messages"
     user_messages = [
         f for f in os.listdir(messages_dir)
-        if f.startswith(f"{username}_") and f.endswith(".json")
+        if (f.startswith(f"{username}_") or f.endswith(f"_{username}.json")) and f.endswith(".json")
     ]
 
     if not user_messages:

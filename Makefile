@@ -8,6 +8,11 @@
 #   - db-init, db-reset, db-run, db-inspect, db-clean, db-remove
 # =========================================
 
+# Mostra a estrutura de diretórios ignorando caches e ambientes
+tree:
+	@echo ">>> Estrutura do projeto:"
+	@tree -I '__pycache__|.venv|venv|.idea|logs|frontend|.history' --dirsfirst
+
 # Caminhos e variáveis globais
 VENV = .venv
 PYTHON = $(VENV)/bin/python
