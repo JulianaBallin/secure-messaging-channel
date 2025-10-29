@@ -1,4 +1,6 @@
 import asyncio
+from hashlib import sha256
+
 import ssl
 import json
 from typing import Dict
@@ -194,13 +196,11 @@ async def api_inbox(username: str):
 
 @app.get("/api/messages/inbox/{username}/{contact}")
 async def api_inbox_contact(username: str, contact: str):
-    """Retorna apenas mensagens entre o usuário e o contato especificado."""
     from backend.crypto.idea_manager import IDEAManager
     db = SessionLocal()
     try:
         user = db.query(User).filter_by(username=username).first()
         contact_user = db.query(User).filter_by(username=contact).first()
-
         if not user or not contact_user:
             raise HTTPException(status_code=404, detail="Usuário ou contato não encontrado.")
 
@@ -211,61 +211,141 @@ async def api_inbox_contact(username: str, contact: str):
         except FileNotFoundError:
             raise HTTPException(status_code=404, detail=f"Chave privada não encontrada para {username}")
 
-        # 🔎 Busca mensagens apenas entre os dois
-        msgs = (
-            db.query(Message)
+        # 🔥 CORREÇÃO RADICAL: Busca APENAS mensagens ÚNICAS
+        # Usa DISTINCT no content_hash para evitar duplicação
+        from sqlalchemy import distinct
+        
+        # Primeiro busca os content_hash únicos
+        unique_hashes = (
+            db.query(Message.content_hash)
             .filter(
                 ((Message.sender_id == user.id) & (Message.receiver_id == contact_user.id)) |
                 ((Message.sender_id == contact_user.id) & (Message.receiver_id == user.id))
             )
             .filter(Message.group_id == None)
-            .order_by(Message.timestamp.asc())
+            .filter(Message.content_hash.isnot(None))
+            .distinct()
             .all()
         )
+        
+        unique_hashes = [h[0] for h in unique_hashes if h[0]]
+        
+        # Agora busca uma mensagem por hash (priorizando as mais recentes)
+        msgs = []
+        for content_hash in unique_hashes:
+            msg = (
+                db.query(Message)
+                .filter(
+                    ((Message.sender_id == user.id) & (Message.receiver_id == contact_user.id)) |
+                    ((Message.sender_id == contact_user.id) & (Message.receiver_id == user.id)),
+                    Message.content_hash == content_hash,
+                    Message.group_id == None
+                )
+                .order_by(Message.timestamp.desc())  # Pega a mais recente
+                .first()
+            )
+            if msg:
+                msgs.append(msg)
+        
+        # Ordena por timestamp
+        msgs.sort(key=lambda x: x.timestamp)
 
         formatted = []
         for msg in msgs:
             sender = db.query(User).get(msg.sender_id)
             is_outgoing = sender.username == username
 
-            if not is_outgoing:
+            # 🔥 CORREÇÃO FINAL: Lógica de decifração priorizando conteúdo real
+            plain_content = None
+            decryption_attempted = False
+
+            # Para mensagens ENVIADAS: PRIMEIRO tenta a cópia self (que sempre deve funcionar)
+            if is_outgoing and msg.content_hash:
                 try:
-                    content_plain = IDEAManager().decifrar_do_chat(
+                    self_copy = (
+                        db.query(Message)
+                        .filter(
+                            Message.sender_id == user.id,
+                            Message.receiver_id == user.id,  # Self copy
+                            Message.content_hash == msg.content_hash
+                        )
+                        .first()
+                    )
+                    if self_copy:
+                        plain_content = IDEAManager().decifrar_do_chat(
+                            packet=self_copy.content_encrypted,
+                            cek_b64=self_copy.key_encrypted,
+                            destinatario=username,
+                            chave_privada_pem=private_key_pem,
+                        )
+                        decryption_attempted = True
+                        print(f"✅ [OUTGOING_DECRYPTED] Mensagem {msg.id} via cópia self: '{plain_content}'")
+                except Exception as e:
+                    print(f"[SELF_COPY_FAIL] {e}")
+
+            # Para mensagens RECEBIDAS: tenta decifrar normalmente
+            if not decryption_attempted and not is_outgoing:
+                try:
+                    plain_content = IDEAManager().decifrar_do_chat(
                         packet=msg.content_encrypted,
                         cek_b64=msg.key_encrypted,
                         destinatario=username,
                         chave_privada_pem=private_key_pem,
                     )
-                except Exception:
-                    content_plain = "(erro ao decifrar)"
-            else:
-                # 🔓 Mostra também o texto decifrado para o remetente
-                try:
-                    content_plain = IDEAManager().decifrar_do_chat(
-                        packet=msg.content_encrypted,
-                        cek_b64=msg.key_encrypted,
-                        destinatario=username,  # o remetente pode usar sua própria chave
-                        chave_privada_pem=private_key_pem,
-                    )
-                except Exception:
-                    content_plain = "(erro ao exibir mensagem enviada)"
+                    decryption_attempted = True
+                    print(f"✅ [INCOMING_DECRYPTED] Mensagem {msg.id} recebida: '{plain_content}'")
+                except Exception as e:
+                    print(f"[INCOMING_DECRYPT_FAIL] Message {msg.id}: {e}")
+
+            # Fallback final - NUNCA mostra "(mensagem enviada)" ou texto confuso
+            if not decryption_attempted or not plain_content:
+                if is_outgoing:
+                    # Se é mensagem enviada e não conseguiu decifrar, tenta uma última abordagem
+                    # Busca qualquer mensagem com mesmo hash que possa funcionar
+                    try:
+                        alternative_msg = (
+                            db.query(Message)
+                            .filter(
+                                Message.content_hash == msg.content_hash,
+                                Message.group_id == None
+                            )
+                            .first()
+                        )
+                        if alternative_msg:
+                            plain_content = IDEAManager().decifrar_do_chat(
+                                packet=alternative_msg.content_encrypted,
+                                cek_b64=alternative_msg.key_encrypted,
+                                destinatario=username,
+                                chave_privada_pem=private_key_pem,
+                            )
+                        else:
+                            plain_content = "📝"  # Ícone indicando mensagem enviada
+                    except Exception:
+                        plain_content = "📝"  # Ícone indicando mensagem enviada
+                else:
+                    plain_content = "🔒"  # Ícone indicando mensagem não decifrada
+
+            # Garante que o conteúdo nunca seja nulo
+            if not plain_content:
+                plain_content = "💬"  # Fallback absoluto
 
             formatted.append({
                 "id": msg.id,
                 "sender": sender.username,
                 "receiver": contact,
-                "content": content_plain,
+                "content": plain_content,
                 "outgoing": is_outgoing,
                 "timestamp": str(msg.timestamp),
+                "content_hash": msg.content_hash[:16] + "..." if msg.content_hash else None
             })
 
+        print(f"📨 [INBOX_CLEAN] {username} ↔ {contact}: {len(msgs)} mensagens únicas")
         return {"messages": formatted}
-
     finally:
         db.close()
-
+        
 # ======================================================
-# 💌 ENVIO PRIVADO
+# 💌 ENVIO PRIVADO - VERSÃO CORRIGIDA
 # ======================================================
 @app.post("/api/messages/send")
 async def api_send_message(req: Request):
@@ -275,61 +355,164 @@ async def api_send_message(req: Request):
         data = await req.json()
         token = data.get("token")
         to = data.get("to")
-        content = data.get("content", "")
+        content = data.get("content", "").strip()
+        
         if not token or not to or not content:
             raise HTTPException(status_code=400, detail="Campos obrigatórios ausentes.")
+        
         sender = verify_access_token(token)
         if not sender:
             raise HTTPException(status_code=401, detail="❌ Token inválido.")
+
         receiver = db.query(User).filter(User.username == to).first()
         if not receiver or not receiver.public_key:
             raise HTTPException(status_code=404, detail=f"Destinatário '{to}' não encontrado ou sem chave pública.")
-        pubkey_pem = receiver.public_key.decode("utf-8", errors="ignore")
+        
+        sender_user = db.query(User).filter(User.username == sender).first()
+        if not sender_user:
+            raise HTTPException(status_code=404, detail="Remetente não encontrado.")
 
+        # 🔐 cifra conteúdo para o destinatário
+        pubkey_pem = receiver.public_key.decode("utf-8", errors="ignore")
         idea = IDEAManager()
-        content_encrypted_b64, cek_rsa_b64 = idea.cifrar_para_chat(
+        cipher_b64, cek_b64 = idea.cifrar_para_chat(
             texto_plano=content,
             remetente=sender,
             destinatario=to,
             chave_publica_destinatario_pem=pubkey_pem,
         )
 
-        # 🔁 Gera uma versão cifrada pro remetente também
-        sender_user = db.query(User).filter(User.username == sender).first()
-        if sender_user and sender_user.public_key:
-            pubkey_sender_pem = sender_user.public_key.decode("utf-8", errors="ignore")
-            content_encrypted_self_b64, cek_rsa_self_b64 = idea.cifrar_para_chat(
-                texto_plano=content,
-                remetente=sender,
-                destinatario=sender,
-                chave_publica_destinatario_pem=pubkey_sender_pem,
+        # ✅ hash do plaintext para vincular cópia do remetente
+        content_hash = sha256(content.encode("utf-8")).hexdigest()
+
+        # 🔥 CORREÇÃO RADICAL: VERIFICA SE JÁ EXISTE MENSAGEM IDÊNTICA
+        existing_message = (
+            db.query(Message)
+            .filter(
+                Message.sender_id == sender_user.id,
+                Message.receiver_id == receiver.id,
+                Message.content_hash == content_hash
             )
-            # Armazena no banco a mensagem pro remetente ler depois
-            db.add(Message(
-                sender_id=sender_user.id,
-                receiver_id=sender_user.id,
-                content_encrypted=content_encrypted_self_b64,
-                key_encrypted=cek_rsa_self_b64,
-            ))
-            db.commit()
+            .first()
+        )
+        
+        if existing_message:
+            print(f"🚫 [DUPLICATE_BLOCKED] Mensagem duplicada detectada e bloqueada")
+            return {
+                "status": "error", 
+                "message": "Mensagem duplicada detectada.",
+                "debug": {"duplicate_blocked": True}
+            }
 
+        # 🔥 CORREÇÃO: CRIA APENAS 1 MENSAGEM REAL (sender -> receiver)
+        message_to_receiver = Message(
+            sender_id=sender_user.id,
+            receiver_id=receiver.id,
+            content_encrypted=cipher_b64,
+            key_encrypted=cek_b64,
+            content_hash=content_hash,
+        )
+        db.add(message_to_receiver)
+        db.flush()  # Gera ID
 
-        await ensure_tls_connection(sender, token)
-        writer = TLS_CONNECTIONS[sender]["writer"]
-        writer.write(json.dumps({
-            "action": "send_message",
-            "token": token,
-            "to": to,
-            "content_encrypted": content_encrypted_b64,
-            "key_encrypted": cek_rsa_b64,
-        }).encode() + b"\n")
-        await writer.drain()
+        print(f"✅ [SEND_SINGLE] {sender} → {to} | Conteúdo: '{content}'")
+        print(f"   📦 Única mensagem criada: ID {message_to_receiver.id}")
 
-        print(f"[SEND_OK] {sender} → {to}")
-        return {"status": "success", "message": f"Mensagem enviada de {sender} para {to}."}
+        # 🔥 CORREÇÃO: CÓPIA SELF APENAS SE POSSÍVEL E NECESSÁRIO
+        if sender_user.public_key:
+            try:
+                pubkey_sender_pem = sender_user.public_key.decode("utf-8", errors="ignore")
+                cipher_self_b64, cek_self_b64 = idea.cifrar_para_chat(
+                    texto_plano=content,
+                    remetente=sender,
+                    destinatario=sender,
+                    chave_publica_destinatario_pem=pubkey_sender_pem,
+                )
+                
+                message_to_self = Message(
+                    sender_id=sender_user.id,
+                    receiver_id=sender_user.id,
+                    content_encrypted=cipher_self_b64,
+                    key_encrypted=cek_self_b64,
+                    content_hash=content_hash,
+                )
+                db.add(message_to_self)
+                print(f"   💾 Cópia self criada: ID {message_to_self.id}")
+            except Exception as e:
+                print(f"   ⚠️  Falha ao criar cópia self: {e}")
+        
+        db.commit()
+
+        # 🔄 Transmissão via TLS (APENAS UMA VEZ)
+        try:
+            await ensure_tls_connection(sender, token)
+            writer = TLS_CONNECTIONS[sender]["writer"]
+            if not writer.is_closing():
+                tls_message = {
+                    "action": "send_message",
+                    "token": token,
+                    "to": to,
+                    "content_encrypted": cipher_b64,
+                    "key_encrypted": cek_b64,
+                }
+                writer.write(json.dumps(tls_message).encode() + b"\n")
+                await writer.drain()
+                print(f"   📡 Transmitido via TLS: 1 mensagem")
+        except Exception as e:
+            print(f"   ⚠️  Falha TLS: {e}")
+
+        return {
+            "status": "success", 
+            "message": f"Mensagem enviada para {to}.",
+            "debug": {
+                "content": content,
+                "main_message_id": message_to_receiver.id,
+                "hash": content_hash[:16] + "..."
+            }
+        }
+        
+    except Exception as e:
+        db.rollback()
+        print(f"❌ [SEND_ERROR] {e}")
+        raise HTTPException(status_code=500, detail=f"Erro ao enviar mensagem: {str(e)}")
     finally:
         db.close()
+        
+# ======================================================
+# TESTE DEBUG
+# ======================================================
 
+@app.get("/api/debug/messages/{username}")
+async def debug_user_messages(username: str):
+    """Endpoint para debug - mostra todas as mensagens de um usuário"""
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter_by(username=username).first()
+        if not user:
+            return {"error": "Usuário não encontrado"}
+        
+        messages = db.query(Message).filter(
+            (Message.sender_id == user.id) | (Message.receiver_id == user.id)
+        ).order_by(Message.timestamp.asc()).all()
+        
+        result = []
+        for msg in messages:
+            sender = db.query(User).get(msg.sender_id)
+            receiver = db.query(User).get(msg.receiver_id)
+            result.append({
+                "id": msg.id,
+                "sender": sender.username if sender else "?",
+                "receiver": receiver.username if receiver else "?",
+                "content_hash": msg.content_hash,
+                "is_self_copy": msg.sender_id == msg.receiver_id,
+                "has_content": bool(msg.content_encrypted),
+                "has_key": bool(msg.key_encrypted),
+                "timestamp": str(msg.timestamp)
+            })
+        
+        return {"user": username, "total_messages": len(result), "messages": result}
+    finally:
+        db.close()
 # ======================================================
 # 👥 GRUPOS
 # ======================================================
