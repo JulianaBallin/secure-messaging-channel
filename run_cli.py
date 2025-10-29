@@ -80,7 +80,7 @@ async def perform_login():
 # Configurações e pastas
 # -----------------------------
 load_dotenv()
-HOST = os.getenv("SERVER_HOST", "127.0.0.1")
+HOST = os.getenv("SERVER_HOST", "0.0.0.0")
 PORT = int(os.getenv("SERVER_PORT", "8888"))
 
 os.makedirs("keys", exist_ok=True)

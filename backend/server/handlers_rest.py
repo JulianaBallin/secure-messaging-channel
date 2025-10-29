@@ -7,7 +7,7 @@ from backend.auth.auth_jwt import create_access_token
 from backend.database.connection import SessionLocal
 import ssl
 
-TCP_HOST = "127.0.0.1"
+TCP_HOST = "0.0.0.0"
 TCP_PORT = 8888
 SSL_CONTEXT = ssl.create_default_context()
 SSL_CONTEXT.check_hostname = False

@@ -32,7 +32,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 
 load_dotenv()
-HOST = os.getenv("SERVER_HOST", "127.0.0.1")
+HOST = os.getenv("SERVER_HOST", "0.0.0.0")
 PORT = int(os.getenv("SERVER_PORT", "8888"))
 
 def verify_rsa_integrity(public_key_pem: str) -> bool:
