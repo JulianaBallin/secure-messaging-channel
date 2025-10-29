@@ -14,7 +14,7 @@ from backend.auth.auth_jwt import verify_access_token
 # ======================================================
 # 🔐 CONFIGURAÇÃO DE REDE (TLS)
 # ======================================================
-TCP_HOST = "0.0.0.0"
+TCP_HOST = "127.0.0.1"
 TCP_PORT = 8888
 SSL_CONTEXT = ssl.create_default_context()
 SSL_CONTEXT.check_hostname = False
@@ -72,7 +72,7 @@ app = FastAPI(title="CipherTalk Adapter API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
