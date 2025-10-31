@@ -15,6 +15,7 @@ from backend.utils.logger_config import database_logger as dblog
 from backend.utils.db_utils import safe_db_operation
 from backend.crypto.idea_manager import IDEAManager
 from backend.crypto.rsa_manager import RSAManager
+from backend.utils.logger_config import log_event
 
 manaus_tz = timezone(timedelta(hours=-4))
 
@@ -126,7 +127,7 @@ def remove_member(db, username: str, group_name: str):
             novo_admin = db.query(User).get(novo_admin_entry.user_id)
             group.admin_id = novo_admin.id
             db.commit()
-            dblog.info(f"[ADMIN_TRANSFER] Novo admin do grupo {group_name}: {novo_admin.username}")
+            log_event("ADMIN_CHANGE", novo_admin.username, f"Promovido a admin do grupo {group_name}")
         else:
             dblog.warning(f"[NO_ADMIN_CANDIDATE] Grupo {group_name} ficou sem membros elegíveis para admin.")
 
@@ -135,7 +136,8 @@ def remove_member(db, username: str, group_name: str):
     cek_fingerprint = sha256(
         nova_cek if isinstance(nova_cek, bytes) else nova_cek.encode()
     ).hexdigest()
-    dblog.info(f"[GROUP_CEK_ROTATION] Nova CEK gerada para {group_name} | SHA256={cek_fingerprint}")
+    log_event("CEK_ROTATION", admin_user.username if admin_user else "system",
+          f"Grupo={group_name} | SHA256={cek_fingerprint}")
 
     for membro in membros_ativos:
         public_key_dest = (

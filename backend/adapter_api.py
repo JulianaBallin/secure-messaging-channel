@@ -12,6 +12,7 @@ from backend.database.connection import SessionLocal
 from backend.server.handlers_rest import handle_register_rest, handle_login_rest
 from backend.auth.models import User, Message, Group, GroupMember
 from backend.auth.auth_jwt import verify_access_token
+from backend.utils.logger_config import log_event
 
 # ======================================================
 # 🔐 CONFIGURAÇÃO DE REDE (TLS)
@@ -560,6 +561,8 @@ async def api_groups_add_member(req: AddMemberReq):
         # 🔐 verifica admin
         admin = db.query(User).get(group.admin_id)
         if not admin or admin.username != requester:
+            log_event("ACCESS_DENIED", requester, f"Tentativa de adicionar membro ao grupo {req.group} sem ser admin.")
+
             raise HTTPException(status_code=403, detail="Apenas o admin pode adicionar membros.")
 
         # evita duplicação

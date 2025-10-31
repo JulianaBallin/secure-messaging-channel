@@ -7,6 +7,7 @@ from backend.utils.logger_config import database_logger as dblog
 from backend.utils.db_utils import safe_db_operation
 from backend.crypto.idea_manager import IDEAManager
 from backend.crypto.rsa_manager import RSAManager
+from backend.utils.logger_config import log_event
 
 manaus_tz = timezone(timedelta(hours=-4))
 
@@ -28,7 +29,7 @@ def create_group(db, name: str, admin_username: str):
     db.add(group)
     db.commit()
     db.refresh(group)
-    dblog.info(f"[CREATE_GROUP] {name} (admin={admin_username})")
+    log_event("GROUP_CREATE", admin_username, f"Grupo '{name}' criado com CEK inicial protegida.")
 
     # 2️⃣ Adiciona o admin como membro do grupo
     admin_member = GroupMember(user_id=admin.id, group_id=group.id)
@@ -53,7 +54,7 @@ def create_group(db, name: str, admin_username: str):
     )
     db.add(sess)
     db.commit()
-    dblog.info(f"[GROUP_CEK_INIT] CEK inicial criada e armazenada para grupo {name}")
+    log_event("CEK_INIT", admin_username, f"CEK inicial criada para grupo '{name}'")
 
     return group
 
