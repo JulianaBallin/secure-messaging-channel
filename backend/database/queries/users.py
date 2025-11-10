@@ -7,6 +7,7 @@ from backend.auth.security import hash_senha
 from backend.crypto.rsa_manager import RSAManager
 from backend.utils.logger_config import database_logger as dblog
 from backend.utils.db_utils import safe_db_operation
+from backend.utils.logger_config import log_event
 
 import os
 
@@ -33,7 +34,10 @@ def create_user(db, username: str, password: str):
     db.commit()
     db.refresh(user)
 
-    dblog.info(f"[CREATE_USER] {username} criado. Chave privada: {private_key_path}")
+    log_event("USER_CREATE", username, f"Usuário criado com senha hash (hash parcial: {password_hash[:16]}...)")
+    log_event("RSA_KEYGEN", username, "Par de chaves RSA gerado e salvo com segurança.")
+    
+    
     return user
 
 

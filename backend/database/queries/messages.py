@@ -16,6 +16,8 @@ from backend.utils.db_utils import safe_db_operation
 from datetime import datetime, timezone, timedelta
 import os
 from cryptography.hazmat.primitives import serialization
+from backend.utils.logger_config import log_event
+
 
 manaus_tz = timezone(timedelta(hours=-4))
 
@@ -88,7 +90,7 @@ def send_secure_message(db, sender: str, receiver: str, plaintext: str):
     )
     db.add(msg)
     db.commit()
-    dblog.info(f"[SEND_SECURE_PRIVATE] {sender} → {receiver}")
+    log_event("SEND_SECURE_PRIVATE", sender, f"Mensagem cifrada enviada para {receiver}. Hash SHA256={content_hash[:16]}...")
     return msg
 
 
@@ -212,6 +214,7 @@ def receive_secure_messages(db, username: str):
             # 2️⃣ Verifica integridade (hash SHA256)
             content_hash_calc = sha256(texto.encode()).hexdigest()
             if msg.content_hash and msg.content_hash != content_hash_calc:
+                log_event("INTEGRITY_FAIL", username, f"Mensagem corrompida ou adulterada de {remetente}")
                 raise ValueError("⚠️ Hash mismatch: conteúdo pode ter sido alterado!")
 
             # 3️⃣ Verifica assinatura digital RSA-SHA256

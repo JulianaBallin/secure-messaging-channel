@@ -83,7 +83,7 @@ def start_listener(host: str, port: int, msg_queue: Queue = None):
                     break
 
 
-def run_listener_thread(host="127.0.0.1", port=9000, msg_queue=None):
+def run_listener_thread(host="0.0.0.0", port=9000, msg_queue=None):
     """
     Inicia o listener em uma thread separada.
     """
@@ -100,7 +100,7 @@ def run_listener_thread(host="127.0.0.1", port=9000, msg_queue=None):
 if __name__ == "__main__":
     # Execução direta para teste isolado
     q = Queue()
-    threading.Thread(target=start_listener_with_reconnect, args=("127.0.0.1", 9000, 5, q), daemon=True).start()
+    threading.Thread(target=start_listener_with_reconnect, args=("0.0.0.0", 9000, 5, q), daemon=True).start()
 
     # Exemplo de consumo local da fila
     while True:

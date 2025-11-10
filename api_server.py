@@ -67,7 +67,7 @@ async def websocket_endpoint(websocket: WebSocket):
     msg_queue = queue.Queue()
     threading.Thread(
         target=listener.start_listener_with_reconnect,
-        args=("127.0.0.1", 9000, 5, msg_queue),
+        args=("0.0.0.0", 9000, 5, msg_queue),
         daemon=True
     ).start()
 

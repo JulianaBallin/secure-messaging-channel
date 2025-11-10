@@ -39,7 +39,7 @@ from backend.utils.logger_config import server_logger as log
 # Configurações gerais
 # ----------------------------
 load_dotenv()
-HOST = os.getenv("SERVER_HOST", "127.0.0.1")
+HOST = os.getenv("SERVER_HOST", "0.0.0.0")
 PORT = int(os.getenv("SERVER_PORT", "8888"))
 
 ONLINE_USERS: Dict[str, asyncio.StreamWriter] = {}
