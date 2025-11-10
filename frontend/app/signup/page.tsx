@@ -21,13 +21,41 @@ export default function SignupPage() {
     setOk(null);
     setLoading(true);
     try {
+      // 🔑 1️⃣ Gera o par de chaves localmente (RSA 2048)
+      const keyPair = await window.crypto.subtle.generateKey(
+        {
+          name: "RSA-OAEP",
+          modulusLength: 2048,
+          publicExponent: new Uint8Array([1, 0, 1]),
+          hash: "SHA-256",
+        },
+        true,
+        ["encrypt", "decrypt"]
+      );
+
+      // 2️⃣ Exporta a pública em formato PEM
+      const spki = await window.crypto.subtle.exportKey("spki", keyPair.publicKey);
+      const pubPem = `-----BEGIN PUBLIC KEY-----\n${btoa(
+        String.fromCharCode(...new Uint8Array(spki))
+      )}\n-----END PUBLIC KEY-----`;
+
+      // 3️⃣ Exporta a privada e salva localmente (apenas no browser)
+      const pkcs8 = await window.crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
+      localStorage.setItem(
+        `privateKey_${username}`,
+        btoa(String.fromCharCode(...new Uint8Array(pkcs8)))
+      );
+
+      // 🚀 4️⃣ Envia o cadastro pro backend
       const data = await fetchJSON("/api/register", {
         method: "POST",
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, public_key: pubPem }),
       });
+
       setOk("Conta criada! Faça login.");
-      setTimeout(()=> router.push("/login"), 800);
-    } catch (e:any) {
+      setTimeout(() => router.push("/login"), 800);
+    } catch (e: any) {
+      console.error(e);
       setError(e.message || "Falha no cadastro");
     } finally {
       setLoading(false);

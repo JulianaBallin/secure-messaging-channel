@@ -24,6 +24,7 @@ USERS_LOCK = asyncio.Lock()
 async def handle_register(db: Session, writer, creds: dict) -> None:
     username = creds.get("username")
     password = creds.get("password")
+    public_key_client = creds.get("public_key")  # 🔹 nova entrada
 
     if not username or not password:
         writer.write("❌ Dados incompletos.\n".encode())
@@ -38,7 +39,6 @@ async def handle_register(db: Session, writer, creds: dict) -> None:
             log.warning(f"[REGISTER_DUPLICATE] Tentativa duplicada de {username}")
             return
 
-        private_key_pem, public_key_pem = RSAManager.gerar_par_chaves()
         hashed_password = hash_password(password)
 
         # 🔑 Salvar chaves em backend/keys/{username}/
@@ -80,16 +80,15 @@ async def handle_register(db: Session, writer, creds: dict) -> None:
         db.add(new_user)
         db.commit()
 
-    writer.write(
-        json.dumps(
-            {
-                "status": "success",
-                "message": f"Usuário '{username}' criado com sucesso.",
-                "private_key": private_key_pem,
-            }
-        ).encode()
-        + b"\n"
-    )
+    # 📦 Resposta: se o servidor gerou chave, devolve; se não, só confirma
+    response = {
+        "status": "success",
+        "message": f"Usuário '{username}' criado com sucesso.",
+    }
+    if private_key_pem:
+        response["private_key"] = private_key_pem
+
+    writer.write((json.dumps(response) + "\n").encode())
     await writer.drain()
     log.info(f"[REGISTER_OK] Novo usuário registrado: {username}")
 
