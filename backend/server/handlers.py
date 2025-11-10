@@ -23,10 +23,10 @@ USERS_LOCK = asyncio.Lock()
 # CADASTRO
 async def handle_register(db: Session, writer, creds: dict) -> None:
     username = creds.get("username")
-    password = creds.get("password")
-    public_key_client = creds.get("public_key")  # 🔹 nova entrada
+    hashed_password = creds.get("password")
+    public_key_pem = creds.get("public_key")
 
-    if not username or not password:
+    if not username or not hashed_password:
         writer.write("❌ Dados incompletos.\n".encode())
         await writer.drain()
         log.warning(f"[REGISTER_FAIL] Campos ausentes para cadastro de {username}")
@@ -39,39 +39,6 @@ async def handle_register(db: Session, writer, creds: dict) -> None:
             log.warning(f"[REGISTER_DUPLICATE] Tentativa duplicada de {username}")
             return
 
-        hashed_password = hash_password(password)
-
-        # 🔑 Salvar chaves em backend/keys/{username}/
-        # handlers.py está em backend/server/, então sobe 2 níveis para chegar em backend/
-        BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        user_keys_dir = os.path.join(BACKEND_DIR, "keys", username)
-        os.makedirs(user_keys_dir, exist_ok=True)
-        
-        private_key_path = os.path.join(user_keys_dir, f"{username}_private.pem")
-        public_key_path = os.path.join(user_keys_dir, f"{username}_public.pem")
-        
-        log.info(f"[KEY_SAVE] Tentando salvar chaves de {username} em: {user_keys_dir}")
-        
-        try:
-            # Salvar chave privada
-            with open(private_key_path, "w", encoding="utf-8") as key_file:
-                key_file.write(private_key_pem)
-            log.info(f"[KEY_SAVED] ✅ Chave privada de {username} salva em: {private_key_path}")
-            
-            # Salvar chave pública
-            with open(public_key_path, "w", encoding="utf-8") as key_file:
-                key_file.write(public_key_pem)
-            log.info(f"[KEY_SAVED] ✅ Chave pública de {username} salva em: {public_key_path}")
-            
-        except Exception as e:
-            log.error(f"[KEY_SAVE_ERROR] ❌ Erro ao salvar chaves de {username}: {e}")
-        
-        try:
-            os.chmod(private_key_path, 0o600)  
-            os.chmod(public_key_path, 0o644)
-        except Exception:
-            pass  # No Windows pode não funcionar, mas não é crítico  
-
         new_user = User(
             username=username,
             password_hash=hashed_password,
@@ -80,15 +47,15 @@ async def handle_register(db: Session, writer, creds: dict) -> None:
         db.add(new_user)
         db.commit()
 
-    # 📦 Resposta: se o servidor gerou chave, devolve; se não, só confirma
-    response = {
-        "status": "success",
-        "message": f"Usuário '{username}' criado com sucesso.",
-    }
-    if private_key_pem:
-        response["private_key"] = private_key_pem
-
-    writer.write((json.dumps(response) + "\n").encode())
+    writer.write(
+        json.dumps(
+            {
+                "status": "success",
+                "message": f"Usuário '{username}' criado com sucesso.",
+            }
+        ).encode()
+        + b"\n"
+    )
     await writer.drain()
     log.info(f"[REGISTER_OK] Novo usuário registrado: {username}")
 

@@ -8,21 +8,15 @@ from typing import Dict, TypedDict, Optional
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from base64 import b64encode
 
 from backend.database.connection import SessionLocal
 from backend.server.handlers_rest import handle_register_rest, handle_login_rest
 from backend.auth.models import User, Message, Group, GroupMember
 from backend.auth.auth_jwt import verify_access_token
-
-# Crypto/Logs
-from backend.crypto.idea_manager import IDEAManager
+from backend.auth.security import hash_senha as hash_password
 from backend.crypto.rsa_manager import RSAManager
-from backend.utils.log_formatter import format_box, truncate_hex
-from backend.utils.logger_config import (
-    individual_chat_logger,
-    group_chat_logger,
-)
-
+# from backend.utils.logger_config import log_event
 # ======================================================
 # 🔐 CONFIGURAÇÃO DE REDE (TLS)
 # ======================================================
@@ -173,7 +167,24 @@ class RemoveMemberReq(BaseModel):
 async def api_register(req: AuthRequest):
     db = SessionLocal()
     try:
-        return await handle_register_rest(db, req.dict())
+        privada_pem_str, publica_pem_str = RSAManager.gerar_par_chaves()
+
+        private_path = f"keys/{req.dict().get("username")}_private.pem"
+        with open(private_path, "w", encoding="utf-8") as f:
+            f.write(privada_pem_str)
+        print(f"🔑 Chave privada salva em: {private_path}")
+
+        public_key_b64 = b64encode(publica_pem_str.encode("utf-8")).decode("utf-8")
+
+        hashed_password = hash_password(req.dict().get("password"))
+
+        user_data = {
+            "username": req.username,
+            "password": hashed_password,
+            "public_key": publica_pem_str
+        }
+
+        return await handle_register_rest(db, user_data)
     finally:
         db.close()
 
@@ -615,6 +626,8 @@ async def api_groups_add_member(req: AddMemberReq):
 
         admin = db.query(User).get(group.admin_id)
         if not admin or admin.username != requester:
+            # log_event("ACCESS_DENIED", requester, f"Tentativa de adicionar membro ao grupo {req.group} sem ser admin.")
+
             raise HTTPException(status_code=403, detail="Apenas o admin pode adicionar membros.")
 
         add_member(db, req.username, req.group)
