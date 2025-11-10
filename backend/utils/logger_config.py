@@ -19,13 +19,31 @@ import os
 import re
 from datetime import datetime, timezone, timedelta
 
+# ======================================================
+# Diretório base
+# ======================================================
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+LOG_DIR = os.path.join(ROOT_DIR, "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+
+# ======================================================
+# Função get_logger (mantida para compatibilidade)
+# ======================================================
 def get_logger(name='messages_logger', logfile='logs/messages.log', level=logging.INFO):
     """Return a configured logger instance for the given name."""
+    # Garante que o diretório existe antes de criar o arquivo
+    log_dir = os.path.dirname(logfile) if os.path.dirname(logfile) else 'logs'
+    if not os.path.isabs(logfile):
+        log_path = os.path.join(LOG_DIR, os.path.basename(logfile))
+    else:
+        log_path = logfile
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    
     logger = logging.getLogger(name)
     if logger.handlers:
         return logger
     logger.setLevel(level)
-    fh = RotatingFileHandler(logfile, maxBytes=5*1024*1024, backupCount=3, encoding='utf-8')
+    fh = RotatingFileHandler(log_path, maxBytes=5*1024*1024, backupCount=3, encoding='utf-8')
     fmt = logging.Formatter('%(asctime)s %(levelname)s %(name)s: %(message)s')
     fh.setFormatter(fmt)
     logger.addHandler(fh)
@@ -33,15 +51,6 @@ def get_logger(name='messages_logger', logfile='logs/messages.log', level=loggin
     sh.setFormatter(fmt)
     logger.addHandler(sh)
     return logger
-
-messages_logger = get_logger()
-
-# ======================================================
-# Diretório base
-# ======================================================
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-LOG_DIR = os.path.join(ROOT_DIR, "logs")
-os.makedirs(LOG_DIR, exist_ok=True)
 
 # ======================================================
 # 🕒 Fuso horário de Manaus
@@ -100,9 +109,11 @@ def setup_logger(name: str, filename: str, level=logging.INFO) -> logging.Logger
     log_path = os.path.join(LOG_DIR, filename)
 
     # 🎯 Handler para arquivo (sem cores)
+    # 🔥 GARANTE encoding UTF-8 e flush imediato
     file_handler = RotatingFileHandler(
         log_path, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
     )
+    file_handler.setLevel(level)  # Garante que o nível está correto
     file_formatter = NoColorFormatter(
         "%(asctime)s [%(levelname)s] [%(name)s] %(message)s",
         "%Y-%m-%d %H:%M:%S",
@@ -124,7 +135,32 @@ def setup_logger(name: str, filename: str, level=logging.INFO) -> logging.Logger
     # ⏰ Ajusta timestamps para Manaus
     logging.Formatter.converter = manaus_time
 
-    logger.info(f"🔧 Logger '{name}' inicializado (arquivo: {filename}) em {datetime.now(MANAUS_TZ)}")
+    # 🔥 GARANTE que os logs sejam escritos imediatamente (flush)
+    def force_flush():
+        for handler in logger.handlers:
+            if hasattr(handler, 'stream') and hasattr(handler.stream, 'flush'):
+                handler.stream.flush()
+    
+    # Adiciona flush após cada log
+    original_info = logger.info
+    def info_with_flush(msg, *args, **kwargs):
+        result = original_info(msg, *args, **kwargs)
+        force_flush()
+        return result
+    logger.info = info_with_flush
+
+    # Log de inicialização apenas uma vez por logger (evita repetição)
+    # Guard: se já tem handlers, não loga novamente
+    if logger.handlers:
+        return logger
+    
+    if not hasattr(setup_logger, '_initialized_loggers'):
+        setup_logger._initialized_loggers = set()
+    
+    if name not in setup_logger._initialized_loggers:
+        logger.info(f"🔧 Logger '{name}' inicializado (arquivo: {filename}) em {datetime.now(MANAUS_TZ)}")
+        setup_logger._initialized_loggers.add(name)
+    
     return logger
 
 # ======================================================
@@ -136,6 +172,10 @@ auth_logger = setup_logger("auth", "auth.log")
 api_logger = setup_logger("api", "api.log")
 crypto_logger = setup_logger("crypto", "crypto.log")
 database_logger = setup_logger("database", "database.log")
+
+# NOVOS LOGGERS: Separados para chat individual e grupo
+individual_chat_logger = setup_logger("individual_chat", "individual_chat.log")
+group_chat_logger = setup_logger("group_chat", "group_chat.log")
 
 # ======================================================
 # 🔒 CryptoLogger personalizado (para operações criptográficas)
@@ -199,3 +239,28 @@ crypto_logger_personalizado = CryptoLogger()
 crypto_logger.info("🔒 Logger de criptografia inicializado (IDEA + RSA tracking ativo).")
 database_logger.info("🗄️ Logger de banco de dados inicializado (SQLAlchemy tracking ativo).")
 server_logger.info("🌐 Logger do servidor inicializado.")
+
+# ======================================================
+# 📝 Função log_event para eventos específicos
+# ======================================================
+def log_event(event_type: str, username: str, message: str):
+    """
+    Registra um evento específico no logger apropriado.
+    
+    Args:
+        event_type: Tipo do evento (ex: "SEND_SECURE_PRIVATE", "ADMIN_CHANGE", etc.)
+        username: Nome do usuário relacionado ao evento
+        message: Mensagem descritiva do evento
+    """
+    # Decide qual logger usar baseado no tipo de evento
+    if event_type.startswith("GROUP") or event_type.startswith("CEK") or event_type.startswith("ADMIN_CHANGE"):
+        group_chat_logger.info(f"[{event_type}] {username}: {message}")
+    elif event_type.startswith("SEND_SECURE") or event_type.startswith("RECEIVE") or event_type.startswith("INTEGRITY"):
+        individual_chat_logger.info(f"[{event_type}] {username}: {message}")
+    elif event_type.startswith("ACCESS_DENIED") or event_type.startswith("API"):
+        api_logger.warning(f"[{event_type}] {username}: {message}")
+    elif event_type.startswith("USER") or event_type.startswith("RSA"):
+        auth_logger.info(f"[{event_type}] {username}: {message}")
+    else:
+        # Padrão: usa database_logger
+        database_logger.info(f"[{event_type}] {username}: {message}")

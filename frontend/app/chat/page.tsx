@@ -241,20 +241,6 @@ export default function ChatPage() {
     }
   };
 
-  // 🔑 Regenera chave
-  const regenerateKey = async () => {
-    if (!selectedGroup || !token) return;
-    try {
-      await fetchJSON(`/api/groups/regenerate_key`, {
-        method: "POST",
-        body: JSON.stringify({ token, group: selectedGroup }),
-      });
-      alert("🔑 Chave do grupo regenerada com sucesso!");
-    } catch (e) {
-      console.error(e);
-      alert("❌ Erro ao regenerar chave do grupo.");
-    }
-  };
 
   // =======================================================
   // UI
@@ -488,12 +474,6 @@ export default function ChatPage() {
                         className="text-red-600 border-red-600"
                       >
                         ❌ Remover
-                      </Button>
-                      <Button
-                        onClick={regenerateKey}
-                        className="bg-yellow-500 hover:bg-yellow-600 text-white"
-                      >
-                        🔑 Regenerar Chave
                       </Button>
                     </div>
                   )}
