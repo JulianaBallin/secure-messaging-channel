@@ -153,6 +153,7 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
             # guarda a conexão do usuário
             ONLINE_USERS[username] = writer
             log.info(f"[RESUME] Sessão restaurada para {username}")
+            print(f"✅ [RESUME] {username} adicionado ao ONLINE_USERS. Total de usuários online: {len(ONLINE_USERS)}")
             writer.write('{"status":"ok","message":"Sessão restaurada"}\n'.encode("utf-8"))
             await writer.drain()
 
@@ -164,6 +165,7 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
             username, token = await handle_login(db, writer, message, ONLINE_USERS)
             if not username:
                 return
+            print(f"✅ [LOGIN] {username} adicionado ao ONLINE_USERS via login. Total de usuários online: {len(ONLINE_USERS)}")
 
         else:
             writer.write('{"status":"error","message":"Ação inicial inválida"}\n'.encode("utf-8"))
@@ -189,6 +191,11 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
                 if action == "ping":
                     writer.write('{"status":"pong"}\n'.encode("utf-8"))
                     await writer.drain()
+
+                elif action == "resume_session":
+                    from backend.server.handlers import handle_resume_session
+                    await handle_resume_session(db, writer, payload, ONLINE_USERS)
+                    continue
 
                 elif action == "list_users":
                     await handle_list_users(db, writer, payload, ONLINE_USERS)

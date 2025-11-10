@@ -9,7 +9,7 @@ Inclui:
 """
 from hashlib import sha256
 from backend.auth.models import Message, User, Group
-from backend.utils.logger_config import database_logger as dblog
+from backend.utils.logger_config import database_logger as dblog, group_chat_logger
 from backend.crypto.idea_manager import IDEAManager
 from backend.crypto.rsa_manager import RSAManager
 from backend.utils.db_utils import safe_db_operation
@@ -17,6 +17,7 @@ from datetime import datetime, timezone, timedelta
 import os
 from cryptography.hazmat.primitives import serialization
 from backend.utils.logger_config import log_event
+from backend.auth.models import GroupMember
 
 
 manaus_tz = timezone(timedelta(hours=-4))
@@ -55,8 +56,11 @@ def send_secure_message(db, sender: str, receiver: str, plaintext: str):
     """Criptografa mensagem privada entre dois usuários e armazena."""
     content_hash = sha256(plaintext.encode()).hexdigest()
     
-    # Carrega chave privada do remetente
-    private_key_path = os.path.join("keys", f"{sender}_private.pem")
+    # 🔑 Ler chave privada de backend/keys/{username}/
+    # messages.py está em backend/database/queries/, então sobe 3 níveis para chegar em backend/
+    BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    user_keys_dir = os.path.join(BACKEND_DIR, "keys", sender)
+    private_key_path = os.path.join(user_keys_dir, f"{sender}_private.pem")
     private_key = RSAManager.carregar_chave_privada(private_key_path)
 
     # Gera assinatura digital (RSA-SHA256)
@@ -113,6 +117,25 @@ def send_secure_group_message(db, sender: str, group_name: str, plaintext: str):
     mgr = IDEAManager()
     msgs_armazenadas = []
 
+    # Gera chave de sessão única para o grupo
+    # Criptografa mensagem apenas uma vez (todos recebem a mesma mensagem criptografada)
+    # Para cada membro, apenas a chave de sessão é criptografada com a chave pública dele
+    first_member = membros[0] if membros else None
+    if not first_member:
+        raise ValueError("Nenhum membro no grupo.")
+    
+    public_key_first = (
+        first_member.public_key.decode()
+        if isinstance(first_member.public_key, bytes)
+        else first_member.public_key
+    )
+    
+    # Criptografa mensagem uma vez (logs habilitados)
+    conteudo_cifrado, _ = mgr.cifrar_para_chat(
+        plaintext, sender, group_name, public_key_first, is_group=True, log_enabled=True
+    )
+    chave_sessao_bytes = bytes.fromhex(mgr.get_chave_sessao_hex())
+
     for membro in membros:
         if membro.id == sender_user.id:
             continue  # não envia para si mesmo
@@ -124,9 +147,8 @@ def send_secure_group_message(db, sender: str, group_name: str, plaintext: str):
             else membro.public_key
         )
 
-        conteudo_cifrado, chave_sessao_cifrada = mgr.cifrar_para_chat(
-            plaintext, sender, membro.username, public_key_dest
-        )
+        # Criptografa apenas a chave de sessão para cada membro (sem logs repetitivos)
+        chave_sessao_cifrada = RSAManager.cifrar_chave_sessao(chave_sessao_bytes, public_key_dest)
 
         # Inclui o receiver_id para cada membro
         msg = Message(
@@ -141,6 +163,7 @@ def send_secure_group_message(db, sender: str, group_name: str, plaintext: str):
         msgs_armazenadas.append(msg)
 
     db.commit()
+    # ⚠️ REMOVIDO: Log removido para evitar poluição (já logado no cifrar_para_chat)
     dblog.info(f"[SEND_SECURE_GROUP] {sender} → grupo {group_name} ({len(msgs_armazenadas)} cópias cifradas)")
     return msgs_armazenadas
 
@@ -195,7 +218,10 @@ def receive_secure_messages(db, username: str):
         print("📭 Nenhuma mensagem recebida.")
         return []
 
-    private_key_path = os.path.join("keys", f"{username}_private.pem")
+    # 🔑 Ler chave privada de backend/keys/{username}/
+    BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    user_keys_dir = os.path.join(BACKEND_DIR, "keys", username)
+    private_key_path = os.path.join(user_keys_dir, f"{username}_private.pem")
     if not os.path.exists(private_key_path):
         raise FileNotFoundError(f"Chave privada não encontrada em {private_key_path}")
 
@@ -255,13 +281,27 @@ def receive_secure_group_messages(db, username: str, group_name: str):
     if not group:
         raise ValueError("Grupo não encontrado.")
 
+    # 🔒 VERIFICA SE USUÁRIO É MEMBRO DO GRUPO
+    is_member = db.query(GroupMember).filter_by(
+        user_id=user.id, 
+        group_id=group.id
+    ).first()
+    
+    if not is_member:
+        raise ValueError(f"Usuário {username} não é membro do grupo {group_name}")
+
+    # 🔒 Busca apenas mensagens enviadas APÓS o usuário ter se tornado membro
+    member_join_time = is_member.joined_at
+
     # Busca mensagens do grupo destinadas a este usuário
     msgs = (
         db.query(Message)
         .filter(
             Message.group_id == group.id, 
-            Message.receiver_id == user.id  # Busca pelo receiver_id específico
+            Message.receiver_id == user.id,
+            Message.timestamp >= member_join_time  # APENAS mensagens após entrada
         )
+        .order_by(Message.timestamp.asc())
         .all()
     )
     
@@ -269,11 +309,17 @@ def receive_secure_group_messages(db, username: str, group_name: str):
         print(f"📭 Nenhuma mensagem recebida no grupo '{group_name}'.")
         return []
 
-    private_key_path = os.path.join("keys", f"{username}_private.pem")
+    # 🔑 Ler chave privada de backend/keys/{username}/
+    BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    user_keys_dir = os.path.join(BACKEND_DIR, "keys", username)
+    private_key_path = os.path.join(user_keys_dir, f"{username}_private.pem")
     if not os.path.exists(private_key_path):
         raise FileNotFoundError(f"Chave privada não encontrada em {private_key_path}")
 
-    private_key = RSAManager.carregar_chave_privada(private_key_path)
+    # Carrega chave privada como string PEM (necessário para decifrar_do_chat)
+    with open(private_key_path, "r") as f:
+        private_key_pem = f.read()
+    
     mgr = IDEAManager()
     mensagens_decifradas = []
 
@@ -282,8 +328,16 @@ def receive_secure_group_messages(db, username: str, group_name: str):
     for msg in msgs:
         remetente = db.query(User).get(msg.sender_id).username
         try:
-            # 1️⃣ Decifra o conteúdo com IDEA
-            texto = mgr.decifrar_do_chat(msg.content_encrypted, msg.key_encrypted, username, private_key)
+            # 1️⃣ Decifra o conteúdo com IDEA (marca como grupo)
+            # ⚠️ IMPORTANTE: log_enabled=False para não poluir logs ao carregar histórico
+            texto = mgr.decifrar_do_chat(
+                msg.content_encrypted, 
+                msg.key_encrypted, 
+                username, 
+                private_key_pem, 
+                is_group=True,
+                log_enabled=False  # Não loga ao carregar histórico
+            )
 
             # 2️⃣ Verifica integridade (hash SHA256)
             content_hash_calc = sha256(texto.encode()).hexdigest()
@@ -305,12 +359,11 @@ def receive_secure_group_messages(db, username: str, group_name: str):
             # 4️⃣ Adiciona à lista de mensagens decifradas
             mensagens_decifradas.append((remetente, texto, msg.timestamp))
             print(f"{assinatura_status} {remetente} → {username}: {texto} [{msg.timestamp}]")
-            dblog.info(f"[RECEIVE_GROUP_OK] {username} decifrou mensagem de {remetente} no grupo {group_name}.")
             msg.is_read = True
 
         except Exception as e:
             print(f"⚠️ Erro ao decifrar mensagem de {remetente}: {e}")
-            dblog.error(f"[RECEIVE_GROUP_FAIL] {username} erro ao decifrar mensagem de {remetente} no grupo {group_name}: {e}")
+            group_chat_logger.error(f"[ERRO_DESCRIPTOGRAFIA] Erro ao decifrar mensagem de {remetente} no grupo {group_name}: {e}")
 
     db.commit()
     return mensagens_decifradas
