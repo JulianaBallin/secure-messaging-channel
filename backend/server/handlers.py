@@ -20,9 +20,10 @@ USERS_LOCK = asyncio.Lock()
 # ======================================================
 async def handle_register(db: Session, writer, creds: dict) -> None:
     username = creds.get("username")
-    password = creds.get("password")
+    hashed_password = creds.get("password")
+    public_key_pem = creds.get("public_key")
 
-    if not username or not password:
+    if not username or not hashed_password:
         writer.write("❌ Dados incompletos.\n".encode())
         await writer.drain()
         log.warning(f"[REGISTER_FAIL] Campos ausentes para cadastro de {username}")
@@ -34,9 +35,6 @@ async def handle_register(db: Session, writer, creds: dict) -> None:
             await writer.drain()
             log.warning(f"[REGISTER_DUPLICATE] Tentativa duplicada de {username}")
             return
-
-        private_key_pem, public_key_pem = RSAManager.gerar_par_chaves()
-        hashed_password = hash_password(password)
 
         new_user = User(
             username=username,
@@ -51,7 +49,6 @@ async def handle_register(db: Session, writer, creds: dict) -> None:
             {
                 "status": "success",
                 "message": f"Usuário '{username}' criado com sucesso.",
-                "private_key": private_key_pem,
             }
         ).encode()
         + b"\n"
