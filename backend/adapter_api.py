@@ -1193,7 +1193,6 @@ async def api_groups_leave(req: Request):
                 )
             )
 
-        # Marca para não duplicar o log de "REMOVENDO MEMBRO"
         from backend.database.queries import members
         members.remove_member._skip_remove_log = True
         try:
