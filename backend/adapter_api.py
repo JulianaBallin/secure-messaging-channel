@@ -1072,9 +1072,7 @@ async def api_groups_messages(group_name: str, token: str):
         )
 
         # 🔑 Ler chave privada de backend/keys/{username}/
-        BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
-        user_keys_dir = os.path.join(BACKEND_DIR, "keys", user_name)
-        priv_path = os.path.join(user_keys_dir, f"{user_name}_private.pem")
+        priv_path = os.path.join("keys", f"{user_name}_private.pem")
         with open(priv_path, "r") as f:
             private_key_pem = f.read()
 
