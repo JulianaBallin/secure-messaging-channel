@@ -8,15 +8,21 @@ from typing import Dict, TypedDict, Optional
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from base64 import b64encode
 
 from backend.database.connection import SessionLocal
 from backend.server.handlers_rest import handle_register_rest, handle_login_rest
 from backend.auth.models import User, Message, Group, GroupMember
-from backend.auth.auth_jwt import verify_access_token
 from backend.auth.security import hash_senha as hash_password
+from backend.auth.auth_jwt import verify_access_token
+
+# Crypto/Logs
+from backend.crypto.idea_manager import IDEAManager
 from backend.crypto.rsa_manager import RSAManager
-# from backend.utils.logger_config import log_event
+from backend.utils.log_formatter import format_box, truncate_hex
+from backend.utils.logger_config import (
+    individual_chat_logger,
+    group_chat_logger,
+)
 # ======================================================
 # 🔐 CONFIGURAÇÃO DE REDE (TLS)
 # ======================================================
@@ -174,8 +180,6 @@ async def api_register(req: AuthRequest):
             f.write(privada_pem_str)
         print(f"🔑 Chave privada salva em: {private_path}")
 
-        public_key_b64 = b64encode(publica_pem_str.encode("utf-8")).decode("utf-8")
-
         hashed_password = hash_password(req.dict().get("password"))
 
         user_data = {
@@ -306,9 +310,7 @@ async def api_inbox_contact(username: str, contact: str):
             raise HTTPException(status_code=404, detail="Usuário ou contato não encontrado.")
 
         # 🔑 Ler chave privada de backend/keys/{username}/
-        BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
-        user_keys_dir = os.path.join(BACKEND_DIR, "keys", username)
-        priv_path = os.path.join(user_keys_dir, f"{username}_private.pem")
+        priv_path = os.path.join("keys", f"{username}_private.pem")
         try:
             with open(priv_path, "r") as f:
                 private_key_pem = f.read()
