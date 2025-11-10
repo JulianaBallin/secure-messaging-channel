@@ -32,7 +32,7 @@ from backend.crypto.rsa_manager import RSAManager
 # -----------------------------
 load_dotenv()
 HOST = os.getenv("SERVER_HOST", "0.0.0.0")
-PORT = int(os.getenv("SERVER_PORT", "8000"))
+PORT = int(os.getenv("SERVER_PORT", ""))
 
 # Criar pastas necessárias
 os.makedirs("keys", exist_ok=True)
