@@ -21,13 +21,24 @@ def create_user(db, username: str, password: str):
     password_hash = hash_senha(password)
     private_key_pem, public_key_pem = RSAManager.gerar_par_chaves()
 
-    keys_dir = os.path.join(os.path.dirname(__file__), "../../../keys")
-    os.makedirs(keys_dir, exist_ok=True)
-    private_key_path = os.path.join(keys_dir, f"{username}_private.pem")
+    # 🔑 Salvar chaves em backend/keys/{username}/
+    # users.py está em backend/database/queries/, então sobe 3 níveis para chegar em backend/
+    BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    user_keys_dir = os.path.join(BACKEND_DIR, "keys", username)
+    os.makedirs(user_keys_dir, exist_ok=True)
+    
+    private_key_path = os.path.join(user_keys_dir, f"{username}_private.pem")
+    public_key_path = os.path.join(user_keys_dir, f"{username}_public.pem")
 
+    # Salvar chave privada
     with open(private_key_path, "w", encoding="utf-8") as key_file:
         key_file.write(private_key_pem)
     os.chmod(private_key_path, 0o600)
+    
+    # Salvar chave pública
+    with open(public_key_path, "w", encoding="utf-8") as key_file:
+        key_file.write(public_key_pem)
+    os.chmod(public_key_path, 0o644)
 
     user = User(username=username, password_hash=password_hash, public_key=public_key_pem.encode())
     db.add(user)

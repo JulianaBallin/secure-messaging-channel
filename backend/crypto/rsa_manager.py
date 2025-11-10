@@ -50,25 +50,25 @@ class RSAManager:
     
     @staticmethod
     def cifrar_chave_sessao(cek_bytes, chave_publica_pem):
+        cek_hex = cek_bytes.hex().upper() if isinstance(cek_bytes, bytes) else bytes.fromhex(cek_bytes).hex().upper()
         pub = RSA.import_key(chave_publica_pem.encode())
         cipher = PKCS1_OAEP.new(pub)
         cek_cifrado = cipher.encrypt(cek_bytes)
         cek_b64 = base64.b64encode(cek_cifrado).decode()
         
-        # LOG: Criptografia RSA da chave de sessão
-        crypto_logger.info("=== CRIPTOGRAFIA RSA (CHAVE DE SESSÃO) ===")
-        crypto_logger.info(f"Chave de Sessão Original (16 bytes): {cek_bytes.hex().upper()}")
-        crypto_logger.info(f"Chave de Sessão Criptografada (Base64): {cek_b64}")
-        crypto_logger.info("=" * 50)
+        # LOG detalhado com valores reais
+        crypto_logger.info(f"[RSA_CRIPTOGRAFAR] Chave de sessão (IDEA) em HEX: {cek_hex}")
+        crypto_logger.info(f"[RSA_CRIPTOGRAFAR] Chave criptografada (RSA) em Base64 (primeiros 64 chars): {cek_b64[:64]}...")
+        crypto_logger.info(f"[RSA_CRIPTOGRAFAR] Tamanho da chave criptografada: {len(cek_b64)} caracteres Base64")
         
         return cek_b64
 
     @staticmethod
     def decifrar_chave_sessao(cek_b64, chave_privada):
         try:
-            # LOG: Início da decifração RSA
-            crypto_logger.info("=== INÍCIO DECRIPTOGRAFIA RSA ===")
-            crypto_logger.info(f"Chave de Sessão Criptografada Recebida: {cek_b64}")
+            # LOG detalhado - chave recebida
+            crypto_logger.info(f"[RSA_DESCRIPTOGRAFAR] Chave criptografada recebida (Base64, primeiros 64 chars): {cek_b64[:64]}...")
+            crypto_logger.info(f"[RSA_DESCRIPTOGRAFAR] Tamanho da chave criptografada: {len(cek_b64)} caracteres Base64")
             
             # Aceita tanto objeto de chave quanto string PEM
             if hasattr(chave_privada, 'private_bytes'):
@@ -90,15 +90,15 @@ class RSAManager:
             if len(cek_bytes) != 16:
                 raise ValueError(f"Chave de sessão deve ter 16 bytes, tem {len(cek_bytes)}")
             
-            # LOG: Decifração RSA bem-sucedida
-            crypto_logger.info("=== DECRIPTOGRAFIA RSA CONCLUÍDA ===")
-            crypto_logger.info(f"Chave de Sessão Decifrada: {cek_bytes.hex().upper()}")
-            crypto_logger.info("=" * 50)
+            cek_hex = cek_bytes.hex().upper()
+            # LOG detalhado - chave descriptografada
+            crypto_logger.info(f"[RSA_DESCRIPTOGRAFAR] Chave de sessão (IDEA) descriptografada em HEX: {cek_hex}")
+            crypto_logger.info(f"[RSA_DESCRIPTOGRAFAR] Tamanho da chave descriptografada: {len(cek_bytes)} bytes (128 bits)")
                 
             return cek_bytes
             
         except Exception as e:
-            crypto_logger.error(f"ERRO na decifração RSA: {e}")
+            crypto_logger.error(f"[RSA_DESCRIPTOGRAFAR_ERRO] Erro na decifração RSA: {e}")
             raise ValueError(f"Erro ao decifrar chave de sessão: {e}")
         
     @staticmethod
@@ -109,6 +109,7 @@ class RSAManager:
         clog.info(f"[LOAD_PUBLIC_KEY] {caminho}")
         return chave
     
+    @staticmethod
     def carregar_chave_privada(caminho):
         with open(caminho, "rb") as f:
             chave_pem = f.read()

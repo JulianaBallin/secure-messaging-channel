@@ -179,7 +179,11 @@ def read_and_decrypt_messages(username: str):
       - key_encrypted: CEK criptografada em Base64 (RSA)
       - timestamp, from
     """
-    private_key_path = f"keys/{username}_private.pem"
+    # 🔑 Ler chave privada de backend/keys/{username}/
+    # cli.py está em backend/messages/, então sobe 2 níveis para chegar em backend/
+    BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    user_keys_dir = os.path.join(BACKEND_DIR, "keys", username)
+    private_key_path = os.path.join(user_keys_dir, f"{username}_private.pem")
     if not os.path.exists(private_key_path):
         print("❌ Chave privada não encontrada.")
         return
