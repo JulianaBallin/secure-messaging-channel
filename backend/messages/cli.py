@@ -239,5 +239,4 @@ def safe_json_loads(data: bytes):
         text = data.decode('utf-8')
         return json.loads(text)
     except Exception as e:
-        messages_logger.warning('Failed to parse JSON response: %s', e)
         return None

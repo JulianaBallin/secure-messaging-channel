@@ -9,7 +9,7 @@ Inclui:
 """
 from hashlib import sha256
 from backend.auth.models import Message, User, Group
-from backend.utils.logger_config import database_logger as dblog, group_chat_logger
+from backend.utils.logger_config import group_chat_logger
 from backend.crypto.idea_manager import IDEAManager
 from backend.crypto.rsa_manager import RSAManager
 from backend.utils.db_utils import safe_db_operation
@@ -44,7 +44,6 @@ def create_message(db, sender: str, receiver: str | None, group: str | None,
     db.add(msg)
     db.commit()
     db.refresh(msg)
-    dblog.info(f"[CREATE_MESSAGE] {sender} → {receiver or group}")
     return msg
 
 
@@ -163,8 +162,6 @@ def send_secure_group_message(db, sender: str, group_name: str, plaintext: str):
         msgs_armazenadas.append(msg)
 
     db.commit()
-    # ⚠️ REMOVIDO: Log removido para evitar poluição (já logado no cifrar_para_chat)
-    dblog.info(f"[SEND_SECURE_GROUP] {sender} → grupo {group_name} ({len(msgs_armazenadas)} cópias cifradas)")
     return msgs_armazenadas
 
 
@@ -185,7 +182,6 @@ def get_chat_history(db, user1: str, user2: str):
         .order_by(Message.timestamp.asc())
         .all()
     )
-    dblog.info(f"[MSG_HISTORY] {len(msgs)} mensagens entre {user1} e {user2}")
     return msgs
 
 
@@ -256,12 +252,10 @@ def receive_secure_messages(db, username: str):
             # 4️⃣ Adiciona à lista de mensagens decifradas
             mensagens_decifradas.append((remetente, texto, msg.timestamp))
             print(f"🔓 {remetente} → {username}: {texto}")
-            dblog.info(f"[RECEIVE_OK] {username} decifrou mensagem de {remetente}.")
             msg.is_read = True
 
         except Exception as e:
             print(f"⚠️ Erro ao decifrar mensagem de {remetente}: {e}")
-            dblog.error(f"[RECEIVE_FAIL] {username} erro ao decifrar mensagem de {remetente}: {e}")
 
     db.commit()
     return mensagens_decifradas
@@ -378,7 +372,6 @@ def mark_as_read(db, msg_id: int):
         return None
     msg.is_read = True
     db.commit()
-    dblog.info(f"[MSG_READ] ID={msg_id}")
     return msg
 
 
@@ -391,6 +384,5 @@ def delete_message(db, msg_id: int):
     if msg:
         db.delete(msg)
         db.commit()
-        dblog.info(f"[DELETE_MESSAGE] ID={msg_id}")
         return True
     return False

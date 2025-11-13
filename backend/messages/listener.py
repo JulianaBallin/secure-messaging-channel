@@ -14,10 +14,9 @@ import json
 import time
 import threading
 from queue import Queue
-from backend.utils.logger_config import get_logger
+from backend.utils.logger_config import disponibilidade_logger
 
-logger = get_logger("messages_logger")
-
+logger = disponibilidade_logger
 
 def start_listener_with_reconnect(
     host: str,

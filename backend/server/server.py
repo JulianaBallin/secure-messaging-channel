@@ -33,7 +33,7 @@ from backend.server.handlers import (
     handle_send_group_message,
 )
 from backend.auth.auth_jwt import verify_access_token
-from backend.utils.logger_config import server_logger as log
+from backend.utils.logger_config import disponibilidade_logger as log
 
 # ----------------------------
 # Configurações gerais

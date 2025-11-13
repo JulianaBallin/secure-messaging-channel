@@ -1,4 +1,6 @@
 import argon2
+from backend.utils.logger_config import autenticidade_logger
+
 
 # Argon2
 ph = argon2.PasswordHasher(
@@ -11,26 +13,76 @@ ph = argon2.PasswordHasher(
 
 def hash_senha(senha: str) -> str:
     try:
-        return ph.hash(senha)
+        hash_final = ph.hash(senha)
+
+        autenticidade_logger.info(
+            f"[ARGON2_HASH_OK] Hash gerado com sucesso.\n"
+            f" • Senha original: {senha}\n"
+            f" • Hash Argon2ID: {hash_final}\n"
+            f" • PasswordHasher_ID: {id(ph)}"
+        )
+
+        return hash_final
+
     except Exception as e:
+        autenticidade_logger.error(
+            f"[ARGON2_HASH_ERRO] Falha ao gerar hash.\n"
+            f" • Senha original: {senha}\n"
+            f" • Erro: {e}"
+        )
         raise ValueError(f"Erro ao gerar hash: {e}")
 
+
 def verificar_senha(senha: str, hash_salvo: str) -> bool:
-    #Verifica se uma senha corresponde ao hash salvo
     try:
-        return ph.verify(hash_salvo, senha)
+        resultado = ph.verify(hash_salvo, senha)
+
+        autenticidade_logger.info(
+            f"[ARGON2_VERIFY_OK] Senha verificada com sucesso.\n"
+            f" • Senha recebida: {senha}\n"
+            f" • Hash salvo: {hash_salvo}\n"
+            f" • Resultado: {resultado}\n"
+            f" • PasswordHasher_ID: {id(ph)}"
+        )
+
+        return True
+
     except argon2.exceptions.VerifyMismatchError:
-        return False
-    except argon2.exceptions.VerificationError:
-        # Hash corrompido ou formato inválido
-        return False
-    except Exception as e:
-        print(f"⚠️ Erro na verificação: {e}")
+        autenticidade_logger.info(
+            f"[ARGON2_VERIFY_INVALIDA] Senha incorreta.\n"
+            f" • Senha recebida: {senha}\n"
+            f" • Hash salvo: {hash_salvo}"
+        )
         return False
 
+    except argon2.exceptions.VerificationError:
+        autenticidade_logger.error(
+            f"[ARGON2_VERIFY_CORROMPIDO] Hash corrompido ou inválido.\n"
+            f" • Hash salvo: {hash_salvo}"
+        )
+        return False
+
+    except Exception as e:
+        autenticidade_logger.error(
+            f"[ARGON2_VERIFY_ERRO] Erro inesperado ao verificar senha.\n"
+            f" • Senha recebida: {senha}\n"
+            f" • Hash salvo: {hash_salvo}\n"
+            f" • Erro: {e}"
+        )
+        return False
+
+
 def precisa_rehash(hash_salvo: str) -> bool:
-    #Verifica se o hash precisa ser atualizado (se parâmetros mudaram)
-    return ph.check_needs_rehash(hash_salvo)
+    precisa = ph.check_needs_rehash(hash_salvo)
+
+    autenticidade_logger.info(
+        f"[ARGON2_REHASH_CHECK] Verificação de necessidade de rehash.\n"
+        f" • Hash salvo: {hash_salvo}\n"
+        f" • Precisa rehash? {precisa}\n"
+        f" • PasswordHasher_ID: {id(ph)}"
+    )
+
+    return precisa
 
 if __name__ == "__main__":
     print("🔐 TESTE DE HASH DE SENHAS (ARGON2ID)")

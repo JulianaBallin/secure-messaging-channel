@@ -10,7 +10,6 @@ Inclui logging detalhado das operações de conexão, verificação e inicializa
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
-from backend.utils.logger_config import database_logger
 
 # ======================================================
 # Caminho fixo e seguro para o banco
@@ -26,8 +25,6 @@ connect_args = {"check_same_thread": False}
 engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args=connect_args, future=True)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, future=True)
 Base = declarative_base()
-
-database_logger.info(f"🔌 [DB_INIT] Conexão SQLAlchemy inicializada ({DB_PATH}).")
 
 
 # ======================================================
@@ -55,12 +52,9 @@ def ensure_database():
 
         # Cria as tabelas, se não existirem
         AuthBase.metadata.create_all(bind=engine)
-        database_logger.info("🗄️ [DB_CREATE] Tabelas criadas e verificadas com sucesso.")
 
         # Log de verificação de esquema
-        database_logger.info("[DB_VERIFY] Esquema do banco de dados validado com sucesso.")
         print("✅ Banco de dados inicializado e verificado com sucesso.")
 
     except Exception as e:
-        database_logger.error(f"[DB_INIT_FAIL] Falha ao inicializar o banco: {e}")
         raise e

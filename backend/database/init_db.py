@@ -21,7 +21,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from backend.database.connection import Base, engine
 from backend.auth.models import User, Group, GroupMember, Message  # noqa: F401
-from backend.utils.logger_config import database_logger as dblog
 
 # Fuso horário de Manaus
 MANAUS_TZ = timezone(timedelta(hours=-4))
@@ -32,9 +31,9 @@ def recreate_database() -> None:
     """Remove o banco antigo e recria do zero."""
     if os.path.exists(DB_PATH):
         os.remove(DB_PATH)
-        dblog.warning(f"🧹 Banco antigo removido ({DB_PATH}) em {datetime.now(MANAUS_TZ)}")
+        print(f"🧹 Banco antigo removido ({DB_PATH}) em {datetime.now(MANAUS_TZ)}")
     Base.metadata.create_all(bind=engine)
-    dblog.info(f"✅ Novo banco criado em {datetime.now(MANAUS_TZ)}")
+    print(f"✅ Novo banco criado em {datetime.now(MANAUS_TZ)}")
 
 
 def update_schema() -> None:
@@ -46,7 +45,7 @@ def update_schema() -> None:
     Base.metadata.create_all(bind=engine)  # safe update
     insp = inspect(engine)
     tables = insp.get_table_names()
-    dblog.info(f"🔧 Schema verificado — tabelas existentes: {tables}")
+    print(f"🔧 Schema verificado — tabelas existentes: {tables}")
     print("✅ Banco atualizado. Tabelas:", ", ".join(tables))
 
 
@@ -67,7 +66,7 @@ def main() -> None:
 
     insp = inspect(engine)
     print("📋 Estrutura final:", insp.get_table_names())
-    dblog.info(f"🏁 Processo de inicialização concluído às {datetime.now(MANAUS_TZ)}")
+    print(f"🏁 Processo de inicialização concluído às {datetime.now(MANAUS_TZ)}")
 
 
 if __name__ == "__main__":

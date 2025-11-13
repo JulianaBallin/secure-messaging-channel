@@ -5,9 +5,8 @@ users.py — CRUD para tabela 'users'
 from backend.auth.models import User
 from backend.auth.security import hash_senha
 from backend.crypto.rsa_manager import RSAManager
-from backend.utils.logger_config import database_logger as dblog
 from backend.utils.db_utils import safe_db_operation
-from backend.utils.logger_config import log_event
+from backend.utils.logger_config import autenticidade_logger
 
 import os
 
@@ -45,9 +44,8 @@ def create_user(db, username: str, password: str):
     db.commit()
     db.refresh(user)
 
-    log_event("USER_CREATE", username, f"Usuário criado com senha hash (hash parcial: {password_hash[:16]}...)")
-    log_event("RSA_KEYGEN", username, "Par de chaves RSA gerado e salvo com segurança.")
-    
+    autenticidade_logger.info("USER_CREATE", username, f"Usuário criado com senha hash (hash parcial: {password_hash[:16]}...)")
+    autenticidade_logger.info("RSA_KEYGEN", username, "Par de chaves RSA gerado e salvo com segurança.")
     
     return user
 
@@ -68,10 +66,7 @@ def set_user_online_status(db, username: str, online: bool):
         raise ValueError("Usuário não encontrado.")
     user.is_online = online
     db.commit()
-    dblog.info(f"[UPDATE_USER] {username} online={online}")
     return user
-
-
 
 # DELETE
 @safe_db_operation
@@ -81,5 +76,4 @@ def delete_user(db, username: str):
         raise ValueError("Usuário não encontrado.")
     db.delete(user)
     db.commit()
-    dblog.info(f"[DELETE_USER] {username}")
     return True

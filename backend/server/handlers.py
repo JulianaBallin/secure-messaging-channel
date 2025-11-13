@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from backend.auth.models import User, Message, Group, GroupMember
 from backend.auth.auth_jwt import create_access_token, verify_access_token
-from backend.utils.logger_config import server_logger as log, individual_chat_logger, group_chat_logger
+from backend.utils.logger_config import individual_chat_logger, group_chat_logger, disponibilidade_logger as log
 from backend.auth.security import hash_senha as hash_password, verificar_senha as verify_password
 from backend.crypto.rsa_manager import RSAManager
 from backend.crypto.idea_manager import IDEAManager

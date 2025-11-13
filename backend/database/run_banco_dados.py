@@ -25,8 +25,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from backend.database.connection import SessionLocal, Base, engine
 from backend.database.queries import users, groups, members, messages
-from backend.utils.logger_config import database_logger as dblog
-print(type(dblog))
 
 manaus_tz = timezone(timedelta(hours=-4))
 db = SessionLocal()
@@ -112,7 +110,6 @@ def menu_inserir():
 
         except Exception as e:
             print(f"⚠️ Erro: {e}")
-            dblog.error(f"[INSERT_ERROR] {e}")
         pausa()
 
 
@@ -226,7 +223,6 @@ def menu_consultar():
 
         except Exception as e:
             print(f"⚠️ Erro: {e}")
-            dblog.error(f"[SELECT_ERROR] {e}")
         pausa()
         
        
@@ -263,7 +259,6 @@ def menu_editar():
                 print("❌ Opção inválida.")
         except Exception as e:
             print(f"⚠️ Erro: {e}")
-            dblog.error(f"[UPDATE_ERROR] {e}")
         pausa()
 
 
@@ -301,7 +296,6 @@ def menu_deletar():
                 print("❌ Opção inválida.")
         except Exception as e:
             print(f"⚠️ Erro: {e}")
-            dblog.error(f"[DELETE_ERROR] {e}")
         pausa()
 
 
@@ -340,9 +334,9 @@ def menu_principal():
 # Execução direta
 # ======================================================
 if __name__ == "__main__":
-    dblog.info("🧭 Painel de banco iniciado (modo CRUD completo).")
+    print("🧭 Painel de banco iniciado (modo CRUD completo).")
     try:
         menu_principal()
     finally:
         db.close()
-        dblog.info("🧹 Sessão SQLAlchemy encerrada.")
+        print("🧹 Sessão SQLAlchemy encerrada.")

@@ -19,6 +19,7 @@ from jose import jwt
 from pydantic import BaseModel
 from backend.auth.security import hash_password, verify_password
 from backend.config import SECRET_KEY, ACCESS_TOKEN_EXPIRE_MINUTES
+from backend.utils.logger_config import autenticidade_logger
 
 # JWT Config
 ALGORITHM = "HS256"
@@ -66,7 +67,9 @@ async def register_user(user: UserCreate):
         )
     hashed_pw = hash_password(user.password)
     FAKE_DB[user.username] = {"password": hashed_pw}
+    autenticidade_logger.info(f"[REGISTRO_OK] Usuário '{user.username}' criado com hash: {hashed_pw}")
     return {"message": f"✅ User '{user.username}' registered successfully."}
+
 
 # -------------------------
 # Login e emissão de JWT
@@ -97,6 +100,7 @@ async def login(user: UserLogin):
 
     # Gera token JWT
     access_token = create_access_token(data={"sub": user.username})
+    autenticidade_logger.info(f"[LOGIN_OK] Usuário '{user.username}' autenticado. Hash verificado: {stored_user['password']}")
     return {"access_token": access_token, "token_type": "bearer"}
 
 # -------------------------

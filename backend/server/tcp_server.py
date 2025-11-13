@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from typing import Dict, Optional
 
 from backend.database.connection import SessionLocal
-from backend.utils.logger_config import server_logger as log
+from backend.utils.logger_config import disponibilidade_logger as log
 from backend.server.handlers import (
     handle_register,
     handle_login,

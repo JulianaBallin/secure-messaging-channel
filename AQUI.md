@@ -1,10 +1,11 @@
 ## 📋 Tarefas em Andamento
 
 ### 🔧 Juliana
-- [ ] Apagar logs antigos  
-- [ ] Retornar **estrutura completa** de todas as tabelas do banco de dados  
-- [ ] Corrigir o **padrão de logs** para salvar por **pilar de segurança** e **subpilar detalhado**  
-- [ ] Consolidar toda a documentação em **um único manual**
+- [X] Apagar logs antigos  
+- [X] Retornar **estrutura completa** de todas as tabelas do banco de dados  
+- [X] Corrigir o **padrão de logs** para salvar por **pilar de segurança**
+- [X] Consolidar toda a documentação em **um único manual**
+- [X] Melhorar logs de autenticidade
 
 ### 🧹 Ana
 - [ ] Apagar arquivos e funções não utilizadas  
@@ -13,10 +14,13 @@
 
 ### 🔑 Fernando
 - [ ] Verificar **recuperação de chaves antigas** no log em grupo
-- [ ] Criar **Docker Compose** para o sistema  
+- [ ] Criar **Docker Compose** para o sistema
+- [ ] Melhorar logs de cryptografia:individual e grupo/confidencialidade
 
 ### 🐳 Marcelo
 - [ ] Verificar **implementação de fila de mensagens**
+- [ ] Melhorar logs de integridade
+- [ ] Melhorar logs de disponibilidade
 
 ---
 

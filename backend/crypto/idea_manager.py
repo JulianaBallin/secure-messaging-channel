@@ -1,6 +1,6 @@
 from backend.crypto.idea import IDEA
 from backend.crypto.rsa_manager import RSAManager
-from backend.utils.logger_config import crypto_logger, individual_chat_logger, group_chat_logger
+from backend.utils.logger_config import individual_chat_logger, group_chat_logger
 from backend.utils.log_formatter import format_box, truncate_hex
 from hashlib import sha256
 

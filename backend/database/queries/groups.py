@@ -1,10 +1,8 @@
 from datetime import datetime, timezone, timedelta
 from backend.auth.models import Group, User, GroupMember, SessionKey
-from backend.utils.logger_config import database_logger as dblog
 from backend.utils.db_utils import safe_db_operation
 from backend.crypto.idea_manager import IDEAManager
 from backend.crypto.rsa_manager import RSAManager
-from backend.utils.logger_config import log_event
 
 manaus_tz = timezone(timedelta(hours=-4))
 
@@ -26,13 +24,12 @@ def create_group(db, name: str, admin_username: str):
     db.add(group)
     db.commit()
     db.refresh(group)
-    log_event("GROUP_CREATE", admin_username, f"Grupo '{name}' criado com CEK inicial protegida.")
+
 
     # 2️⃣ Adiciona o admin como membro do grupo
     admin_member = GroupMember(user_id=admin.id, group_id=group.id)
     db.add(admin_member)
     db.commit()
-    dblog.info(f"[ADD_ADMIN_MEMBER] {admin_username} adicionado automaticamente ao grupo {name}")
 
     # 3️⃣ Gera CEK inicial para o grupo
     from backend.utils.logger_config import group_chat_logger
@@ -70,7 +67,6 @@ def create_group(db, name: str, admin_username: str):
     
     group_chat_logger.info(f"🔑 [5] {admin_username} descriptografou chave de sessão com chave privada RSA: {cek_hex}")
     group_chat_logger.info(f"{'='*70}\n")
-    log_event("CEK_INIT", admin_username, f"CEK inicial criada para grupo '{name}'")
 
     return group
 
@@ -96,7 +92,6 @@ def rename_group(db, old_name: str, new_name: str):
         raise ValueError("Grupo não encontrado.")
     group.name = new_name
     db.commit()
-    dblog.info(f"[UPDATE_GROUP] {old_name} → {new_name}")
     return group
 
 
@@ -110,5 +105,4 @@ def delete_group(db, name: str):
         raise ValueError("Grupo não encontrado.")
     db.delete(group)
     db.commit()
-    dblog.info(f"[DELETE_GROUP] {name}")
     return True

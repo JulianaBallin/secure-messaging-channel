@@ -1,8 +1,6 @@
 import os
 import secrets
 from .idea_fallback import padding_pkcs7, remove_pkcs7
-from backend.utils.logger_config import crypto_logger
-
 
 
 class IDEA:
@@ -211,12 +209,8 @@ class IDEA:
             texto_cifrado_bytes += bloco_cifrado
             bloco_anterior = bloco_cifrado
         
-        # Log sobre criptografia de blocos
-        from backend.utils.logger_config import crypto_logger
-        crypto_logger.info(f"[BLOCOS_CRIPTOGRAFADOS] {len(blocos)} blocos criptografados com IDEA-CBC")
         for i, bloco in enumerate(blocos):
             bloco_hex = bloco.hex().upper()
-            crypto_logger.info(f"[BLOCO_{i+1}_CRIPTOGRAFADO] Bloco {i+1}/{len(blocos)} | Entrada (HEX): {bloco_hex}")
         
         resultado = f"{texto_cifrado_bytes.hex().upper()}:{iv_hex}"
         return resultado
@@ -250,10 +244,8 @@ class IDEA:
                 bloco_anterior = bloco
             
             # Log sobre descriptografia de blocos
-            crypto_logger.info(f"[BLOCOS_DESCRIPTOGRAFADOS] {len(blocos)} blocos descriptografados com IDEA-CBC")
             for i, bloco in enumerate(blocos):
                 bloco_hex = bloco.hex().upper()
-                crypto_logger.info(f"[BLOCO_{i+1}_DESCRIPTOGRAFADO] Bloco {i+1}/{len(blocos)} | Criptografado (HEX): {bloco_hex}")
             
             # Remove PKCS7 padding
             texto_sem_padding = remove_pkcs7(texto_decifrado_bytes)
@@ -262,5 +254,4 @@ class IDEA:
             return texto_final
             
         except Exception as e:
-            crypto_logger.error(f"ERRO na decifração CBC: {e}")
             raise ValueError(f"Erro na decifração: {e}")

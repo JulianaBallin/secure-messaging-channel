@@ -13,11 +13,10 @@ from datetime import datetime, timezone, timedelta
 from hashlib import sha256
 from sqlalchemy import text
 from backend.auth.models import GroupMember, User, Group, SessionKey, Message
-from backend.utils.logger_config import database_logger as dblog, group_chat_logger
+from backend.utils.logger_config import group_chat_logger
 from backend.utils.db_utils import safe_db_operation
 from backend.crypto.idea_manager import IDEAManager
 from backend.crypto.rsa_manager import RSAManager
-from backend.utils.logger_config import log_event
 from backend.utils.log_formatter import format_box, truncate_hex
 
 manaus_tz = timezone(timedelta(hours=-4))
@@ -48,7 +47,6 @@ def add_member(db, username: str, group_name: str):
     member = GroupMember(user_id=user.id, group_id=group.id)
     db.add(member)
     db.commit()
-    dblog.info(f"[ADD_MEMBER] {username} → {group_name}")
 
     # 2️⃣ Busca CEK atual (última session_key) - para mostrar chave antiga
     session_entry = (
@@ -113,7 +111,6 @@ def add_member(db, username: str, group_name: str):
 
     # 4️⃣ Fingerprint SHA256 da CEK (antes de cifrar)
     cek_fingerprint = sha256(nova_cek if isinstance(nova_cek, bytes) else nova_cek.encode()).hexdigest()
-    dblog.info(f"[CEK_FINGERPRINT] Grupo={group_name} | SHA256={cek_fingerprint}")
 
     # 5️⃣ Distribui nova CEK para todos os membros (incluindo o novo)
     membros = db.query(GroupMember).filter_by(group_id=group.id).all()
@@ -199,7 +196,6 @@ def add_member(db, username: str, group_name: str):
         )
     )
     group_chat_logger.info("\n")
-    dblog.info(f"[GROUP_CEK_SHARE] CEK do grupo {group_name} distribuída a {username}.")
     return member
 
 
@@ -278,8 +274,6 @@ def remove_member(db, username: str, group_name: str):
         db.query(Message).filter_by(group_id=group.id, sender_id=user_removido.id).delete()
         db.commit()
 
-    dblog.info(f"[REMOVE_MEMBER] {username} removido do grupo {group_name}")
-
     # 🔄 Recarrega o grupo para obter dados atualizados
     db.refresh(group)
     
@@ -303,7 +297,6 @@ def remove_member(db, username: str, group_name: str):
         group_chat_logger.info("\n")
         db.delete(group)
         db.commit()
-        dblog.warning(f"[ROTATION_ABORT] Grupo {group_name} sem membros ativos - grupo deletado.")
         return
 
     # 👑 Se o admin atual foi removido, transfere para o membro mais antigo
@@ -333,13 +326,11 @@ def remove_member(db, username: str, group_name: str):
                 # Recarrega o grupo após atualizar admin_id
                 db.refresh(group)
                 group_chat_logger.info(f"✅ Novo admin: {novo_admin.username} promovido a admin do grupo {group_name}")
-                log_event("ADMIN_CHANGE", novo_admin.username, f"Promovido a admin do grupo {group_name}")
             else:
                 group_chat_logger.warning(f"⚠️ Não foi possível encontrar o novo admin para o grupo {group_name}.")
-                dblog.warning(f"[NO_ADMIN_CANDIDATE] Grupo {group_name} ficou sem admin válido.")
+
         else:
             group_chat_logger.warning(f"⚠️ Grupo {group_name} ficou sem membros elegíveis para admin.")
-            dblog.warning(f"[NO_ADMIN_CANDIDATE] Grupo {group_name} ficou sem membros elegíveis para admin.")
         
         group_chat_logger.info(f"{'='*70}")
         
@@ -349,7 +340,6 @@ def remove_member(db, username: str, group_name: str):
     # Se não há admin_user válido, não pode continuar com a rotação
     if not admin_user:
         group_chat_logger.error(f"❌ Erro: Grupo {group_name} não tem admin válido. Não é possível rotacionar CEK.")
-        dblog.error(f"[ROTATION_FAIL] Grupo {group_name} sem admin válido após remoção.")
         return
 
     # 🔁 Rotaciona CEK para os membros restantes
@@ -379,9 +369,6 @@ def remove_member(db, username: str, group_name: str):
     cek_fingerprint = sha256(
         nova_cek if isinstance(nova_cek, bytes) else nova_cek.encode()
     ).hexdigest()
-    log_event("CEK_ROTATION", admin_user.username,
-          f"Grupo={group_name} | SHA256={cek_fingerprint}")
-
     group_chat_logger.info(
         format_box(
             title=f"🔄 DISTRIBUINDO NOVA CEK: Grupo {group_name} → {len(membros_ativos_query)} membros restantes",
@@ -460,7 +447,6 @@ def remove_member(db, username: str, group_name: str):
         )
     )
     group_chat_logger.info("\n")
-    dblog.info(f"[GROUP_CEK_ROTATION_DONE] CEK rotacionada e distribuída após remoção de {username}.")
 
 
 # ======================================================

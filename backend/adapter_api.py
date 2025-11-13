@@ -8,6 +8,8 @@ from typing import Dict, TypedDict, Optional
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import socket
+from contextlib import closing
 
 from backend.database.connection import SessionLocal
 from backend.server.handlers_rest import handle_register_rest, handle_login_rest
@@ -23,6 +25,11 @@ from backend.utils.logger_config import (
     individual_chat_logger,
     group_chat_logger,
 )
+
+import os
+
+os.makedirs("keys", exist_ok=True)
+
 # ======================================================
 # 🔐 CONFIGURAÇÃO DE REDE (TLS)
 # ======================================================

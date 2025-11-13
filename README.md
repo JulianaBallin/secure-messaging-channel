@@ -27,8 +27,84 @@
 
 ## 📁 Estrutura Inicial do Projeto
 ```
-secure-messaging-channel/
+>>> secure-messaging-channel
 ├── backend
+│   ├── auth
+│   │   ├── admin_cli.py
+│   │   ├── auth_jwt.py
+│   │   ├── __init__.py
+│   │   ├── models.py
+│   │   ├── routes.py
+│   │   └── security.py
+│   ├── crypto
+│   │   ├── idea_fallback.py
+│   │   ├── idea_manager.py
+│   │   ├── idea.py
+│   │   ├── __init__.py
+│   │   ├── main.py
+│   │   └── rsa_manager.py
+│   ├── database
+│   │   ├── queries
+│   │   │   ├── groups.py
+│   │   │   ├── __init__.py
+│   │   │   ├── members.py
+│   │   │   ├── messages.py
+│   │   │   └── users.py
+│   │   ├── cipher_talk.db
+│   │   ├── connection.py
+│   │   ├── init_db.py
+│   │   ├── __init__.py
+│   │   └── run_banco_dados.py
+│   ├── groups
+│   │   └── cli.py
+│   ├── messages
+│   │   ├── cli.py
+│   │   ├── __init__.py
+│   │   └── listener.py
+│   ├── routes
+│   │   ├── __init__.py
+│   │   └── messaging.py
+│   ├── server
+│   │   ├── handlers.py
+│   │   ├── handlers_rest.py
+│   │   ├── __init__.py
+│   │   ├── server.py
+│   │   └── tcp_server.py
+│   ├── utils
+│   │   ├── db_utils.py
+│   │   ├── log_formatter.py
+│   │   └── logger_config.py
+│   ├── adapter_api.py
+│   ├── config.py
+│   ├── __init__.py
+│   └── main.py
+├── client
+│   ├── auth
+│   │   ├── __init__.py
+│   │   ├── login_cli.py
+│   │   └── signup_cli.py
+│   ├── messages
+│   │   ├── __init__.py
+│   │   └── message_cli.py
+│   ├── network
+│   │   ├── client_socket.py
+│   │   └── __init__.py
+│   ├── utils
+│   │   ├── helpers.py
+│   │   ├── __init__.py
+│   │   ├── logger.py
+│   │   └── validator.py
+│   ├── __init__.py
+│   └── run_cli.py
+├── api_server.py
+├── banco_dados_estrutura.md
+├── LICENSE
+├── Makefile
+├── manual.md
+├── README.md
+├── requirements.txt
+├── run_cli.py
+└── run_gui.py
      
 ```
 
