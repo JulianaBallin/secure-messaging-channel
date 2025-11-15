@@ -25,24 +25,46 @@ import os
 # Modo de visualização: "compact" ou "pretty"
 LOG_VIEW_MODE = os.getenv("LOG_VIEW_MODE", "pretty").lower()
 
-def truncate_hex(value: str, prefix_len: int = 6, suffix_len: int = 6) -> str:
+def truncate_hex(value: str, prefix_len: int = 8, suffix_len: int = 8) -> str:
     """
-    Trunca valores hexadecimais de forma consistente.
+    Trunca valores hexadecimais de forma consistente (firstN...lastN).
     
     Args:
         value: Valor hexadecimal
-        prefix_len: Comprimento do prefixo
-        suffix_len: Comprimento do sufixo
+        prefix_len: Comprimento do prefixo (padrão: 8)
+        suffix_len: Comprimento do sufixo (padrão: 8)
     
     Returns:
-        Valor truncado no formato: AB12CD...EF3456
+        Valor truncado no formato: AB12CDEF...EF345678
     """
     if not value:
         return ""
-    value = value.upper()
+    value = str(value).upper()
     if len(value) <= prefix_len + suffix_len:
         return value
     return f"{value[:prefix_len]}...{value[-suffix_len:]}"
+
+def truncate_text(value: str, max_chars: int = 50, show_sample: bool = True) -> str:
+    """
+    Trunca texto longo mostrando apenas tamanho e amostra opcional.
+    
+    Args:
+        value: Texto a ser truncado
+        max_chars: Número máximo de caracteres a mostrar (padrão: 50)
+        show_sample: Se True, mostra amostra truncada (padrão: True)
+    
+    Returns:
+        String formatada: tamanho + amostra (se show_sample=True)
+    """
+    if not value:
+        return "0 bytes"
+    size = len(value.encode('utf-8'))
+    if len(value) <= max_chars:
+        return f"'{value}' ({size} bytes)"
+    if show_sample:
+        sample = value[:20] + "..." + value[-10:] if len(value) > 30 else value[:max_chars] + "..."
+        return f"'{sample}' ({size} bytes)"
+    return f"{size} bytes"
 
 def derive_cek_id(cek_bytes: bytes) -> str:
     """

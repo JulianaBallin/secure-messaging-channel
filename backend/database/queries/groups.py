@@ -19,6 +19,11 @@ def create_group(db, name: str, admin_username: str):
     if not admin:
         raise ValueError("Administrador não encontrado.")
 
+    # Verifica se o grupo já existe
+    existing_group = db.query(Group).filter_by(name=name).first()
+    if existing_group:
+        raise ValueError(f"Grupo '{name}' já existe.")
+
     # 1️⃣ Cria grupo
     group = Group(name=name, admin_id=admin.id)
     db.add(group)

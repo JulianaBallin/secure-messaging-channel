@@ -8,8 +8,6 @@ from typing import Dict, TypedDict, Optional
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import socket
-from contextlib import closing
 
 from backend.database.connection import SessionLocal
 from backend.server.handlers_rest import handle_register_rest, handle_login_rest
@@ -24,12 +22,9 @@ from backend.utils.log_formatter import format_box, truncate_hex
 from backend.utils.logger_config import (
     individual_chat_logger,
     group_chat_logger,
+    confidencialidade_logger,
+    confidencialidade_chat_grupo_logger,
 )
-
-import os
-
-os.makedirs("keys", exist_ok=True)
-
 # ======================================================
 # 🔐 CONFIGURAÇÃO DE REDE (TLS)
 # ======================================================
@@ -179,14 +174,29 @@ class RemoveMemberReq(BaseModel):
 @app.post("/api/register")
 async def api_register(req: AuthRequest):
     db = SessionLocal()
+    private_key_path = None
     try:
+        # 1️⃣ Verifica se o usuário já existe ANTES de gerar chaves
+        existing_user = db.query(User).filter(User.username == req.username).first()
+        if existing_user:
+            raise HTTPException(status_code=400, detail="Usuário já existe.")
+
+        # 2️⃣ Gera par de chaves
         privada_pem_str, publica_pem_str = RSAManager.gerar_par_chaves()
 
-        private_path = f"keys/{req.dict().get("username")}_private.pem"
-        with open(private_path, "w", encoding="utf-8") as f:
+        # 3️⃣ Salvar chave privada em backend/keys/{username}/
+        BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+        user_keys_dir = os.path.join(BACKEND_DIR, "keys", req.username)
+        os.makedirs(user_keys_dir, exist_ok=True)
+        
+        private_key_path = os.path.join(user_keys_dir, f"{req.username}_private.pem")
+        
+        with open(private_key_path, "w", encoding="utf-8") as f:
             f.write(privada_pem_str)
-        print(f"🔑 Chave privada salva em: {private_path}")
+        os.chmod(private_key_path, 0o600)
+        print(f"🔑 Chave privada salva em: {private_key_path}")
 
+        # 4️⃣ Prepara dados do usuário
         hashed_password = hash_password(req.dict().get("password"))
 
         user_data = {
@@ -195,7 +205,42 @@ async def api_register(req: AuthRequest):
             "public_key": publica_pem_str
         }
 
-        return await handle_register_rest(db, user_data)
+        # 5️⃣ Registra o usuário no banco
+        result = await handle_register_rest(db, user_data)
+        
+        # Se o registro falhar, remove a chave privada que foi salva
+        if result.get("status") == "error":
+            if private_key_path and os.path.exists(private_key_path):
+                try:
+                    os.remove(private_key_path)
+                    # Remove o diretório se estiver vazio
+                    if os.path.exists(user_keys_dir):
+                        try:
+                            os.rmdir(user_keys_dir)
+                        except OSError:
+                            pass  # Diretório não está vazio, tudo bem
+                except Exception as e:
+                    print(f"⚠️ Erro ao remover chave privada após falha no registro: {e}")
+            raise HTTPException(status_code=400, detail=result.get("message", "Erro ao registrar usuário."))
+        
+        return result
+    except HTTPException:
+        # Re-lança HTTPException sem modificar
+        raise
+    except Exception as e:
+        # Se ocorrer qualquer erro, tenta limpar a chave privada que foi salva
+        if private_key_path and os.path.exists(private_key_path):
+            try:
+                os.remove(private_key_path)
+                user_keys_dir = os.path.dirname(private_key_path)
+                if os.path.exists(user_keys_dir):
+                    try:
+                        os.rmdir(user_keys_dir)
+                    except OSError:
+                        pass
+            except Exception:
+                pass
+        raise HTTPException(status_code=500, detail=f"Erro ao registrar: {str(e)}")
     finally:
         db.close()
 
@@ -317,7 +362,9 @@ async def api_inbox_contact(username: str, contact: str):
             raise HTTPException(status_code=404, detail="Usuário ou contato não encontrado.")
 
         # 🔑 Ler chave privada de backend/keys/{username}/
-        priv_path = os.path.join("keys", f"{username}_private.pem")
+        BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+        user_keys_dir = os.path.join(BACKEND_DIR, "keys", username)
+        priv_path = os.path.join(user_keys_dir, f"{username}_private.pem")
         try:
             with open(priv_path, "r") as f:
                 private_key_pem = f.read()
@@ -613,8 +660,31 @@ async def api_groups_create(req: CreateGroupReq):
         creator = verify_access_token(req.token)
         if not creator:
             raise HTTPException(status_code=401, detail="Token inválido.")
-        g = create_group(db, name=req.name, admin_username=creator)
-        return {"status": "ok", "group": {"id": g.id, "name": g.name}}
+        
+        try:
+            g = create_group(db, name=req.name, admin_username=creator)
+            return {"status": "ok", "group": {"id": g.id, "name": g.name}}
+        except ValueError as e:
+            # Captura erros como "Administrador não encontrado" ou "Grupo já existe"
+            error_msg = str(e)
+            if "já existe" in error_msg.lower():
+                raise HTTPException(status_code=400, detail=error_msg)
+            raise HTTPException(status_code=404, detail=error_msg)
+        except Exception as e:
+            error_str = str(e)
+            # Captura erros de constraint UNIQUE do SQLAlchemy
+            if "UNIQUE constraint failed" in error_str or "IntegrityError" in error_str:
+                if "groups.name" in error_str:
+                    raise HTTPException(status_code=400, detail=f"Grupo '{req.name}' já existe.")
+                raise HTTPException(status_code=400, detail="Erro de integridade: registro duplicado.")
+            # Captura outros erros inesperados
+            raise HTTPException(status_code=500, detail=f"Erro ao criar grupo: {error_str}")
+    except HTTPException:
+        # Re-lança HTTPException sem modificar
+        raise
+    except Exception as e:
+        # Captura qualquer outro erro não esperado
+        raise HTTPException(status_code=500, detail=f"Erro inesperado ao criar grupo: {str(e)}")
     finally:
         db.close()
 
@@ -635,16 +705,26 @@ async def api_groups_add_member(req: AddMemberReq):
 
         admin = db.query(User).get(group.admin_id)
         if not admin or admin.username != requester:
-            # log_event("ACCESS_DENIED", requester, f"Tentativa de adicionar membro ao grupo {req.group} sem ser admin.")
-
             raise HTTPException(status_code=403, detail="Apenas o admin pode adicionar membros.")
 
-        add_member(db, req.username, req.group)
-
-        return {
-            "status": "ok",
-            "message": f"{req.username} adicionado ao grupo {req.group}. Nova chave IDEA distribuída.",
-        }
+        try:
+            add_member(db, req.username, req.group)
+            return {
+                "status": "ok",
+                "message": f"{req.username} adicionado ao grupo {req.group}. Nova chave IDEA distribuída.",
+            }
+        except ValueError as e:
+            # Captura erros como "Usuário ou grupo não encontrado"
+            raise HTTPException(status_code=404, detail=str(e))
+        except Exception as e:
+            # Captura outros erros inesperados
+            raise HTTPException(status_code=500, detail=f"Erro ao adicionar membro: {str(e)}")
+    except HTTPException:
+        # Re-lança HTTPException sem modificar
+        raise
+    except Exception as e:
+        # Captura qualquer outro erro não esperado
+        raise HTTPException(status_code=500, detail=f"Erro inesperado ao adicionar membro: {str(e)}")
     finally:
         db.close()
 
@@ -706,9 +786,21 @@ async def api_groups_remove_member(req: RemoveMemberReq):
             )
         )
 
-        remove_member(db, req.username, req.group)
-
-        return {"status": "ok", "message": f"{req.username} removido de {req.group}. Nova chave IDEA distribuída."}
+        try:
+            remove_member(db, req.username, req.group)
+            return {"status": "ok", "message": f"{req.username} removido de {req.group}. Nova chave IDEA distribuída."}
+        except ValueError as e:
+            # Captura erros como "Membro ou grupo não encontrado"
+            raise HTTPException(status_code=404, detail=str(e))
+        except Exception as e:
+            # Captura outros erros inesperados
+            raise HTTPException(status_code=500, detail=f"Erro ao remover membro: {str(e)}")
+    except HTTPException:
+        # Re-lança HTTPException sem modificar
+        raise
+    except Exception as e:
+        # Captura qualquer outro erro não esperado
+        raise HTTPException(status_code=500, detail=f"Erro inesperado ao remover membro: {str(e)}")
     finally:
         db.close()
 
@@ -804,6 +896,14 @@ async def api_groups_send(req: Request):
                 char="=",
             )
         )
+        
+        # Log de confidencialidade: Cabeçalho para distribuição de CEK em grupo
+        cek_hex = cek_bytes.hex().upper()
+        cek_hex_truncada = truncate_hex(cek_hex, 8, 8)
+        confidencialidade_chat_grupo_logger.info(f"[6] DISTRIBUICAO_CEK_GRUPO:")
+        confidencialidade_chat_grupo_logger.info(f"     └─ Membros: {len(membros_info)}")
+        confidencialidade_chat_grupo_logger.info(f"     └─ CEK (truncada): {cek_hex_truncada}")
+        confidencialidade_chat_grupo_logger.info(f"     └─ Algoritmo wrap: RSA-2048/OAEP")
 
         for info in membros_info:
             user = info["user"]
@@ -834,6 +934,11 @@ async def api_groups_send(req: Request):
             group_chat_logger.info(f"     └─ IV: {iv_truncado}")
             group_chat_logger.info(f"     └─ CEK wrapada: {cek_enc_truncado}")
             group_chat_logger.info(f"{'-'*70}")
+            
+            # Log de confidencialidade: Resultado do wrap RSA para cada membro do grupo
+            confidencialidade_chat_grupo_logger.info(f"     └─ Wrap_RSA: {user.username}")
+            confidencialidade_chat_grupo_logger.info(f"         └─ PubKey_Fingerprint: {pubkey_fingerprint}")
+            confidencialidade_chat_grupo_logger.info(f"         └─ CEK_Criptografada: {cek_enc_truncado} | Tamanho: {len(cek_enc)} caracteres Base64")
 
             msg = Message(
                 sender_id=user_sender.id,
@@ -846,6 +951,8 @@ async def api_groups_send(req: Request):
             membros_com_chave.append(user.username)
 
         db.commit()
+        
+        confidencialidade_chat_grupo_logger.info(f"{'='*70}\n")
 
         # 🚀 Retorna resposta imediatamente (libera botão "Enviando...")
         # 📦 Prepara dados para log final em background
@@ -915,7 +1022,7 @@ async def api_groups_regenerate_key(req: Request):
         if not admin or admin.username != requester:
             raise HTTPException(status_code=403, detail="Apenas o admin pode regenerar a chave.")
 
-        # Busca chave antiga
+        # Busca chave antiga através de mensagem do admin
         # 🔑 Ler chave privada de backend/keys/{username}/
         BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
         admin_keys_dir = os.path.join(BACKEND_DIR, "keys", admin.username)
@@ -923,21 +1030,62 @@ async def api_groups_regenerate_key(req: Request):
         with open(admin_priv_path, "r") as f:
             admin_priv_key = f.read()
 
-        admin_msg_antiga = (
+        # Estratégia: Busca a CEK de sessão do grupo (não a CEK temporária das mensagens)
+        from sqlalchemy import not_
+        chave_antiga_hex = None
+        
+        # 1. Primeiro tenta buscar mensagem de atualização de chave do admin (tem a CEK de sessão)
+        admin_msg_chave = (
             db.query(Message)
             .filter_by(group_id=group.id, receiver_id=admin.id)
             .filter(Message.key_encrypted.isnot(None))
+            .filter(Message.content_encrypted.like("(%"))  # Mensagens de atualização de chave
             .order_by(Message.timestamp.desc())
             .first()
         )
-
-        chave_antiga_hex = None
-        if admin_msg_antiga:
+        
+        if admin_msg_chave and admin_msg_chave.key_encrypted:
             try:
-                cek_antiga_bytes = RSAManager.decifrar_chave_sessao(admin_msg_antiga.key_encrypted, admin_priv_key)
+                cek_antiga_bytes = RSAManager.decifrar_chave_sessao(admin_msg_chave.key_encrypted, admin_priv_key)
                 chave_antiga_hex = cek_antiga_bytes.hex().upper()
-            except Exception:
+            except Exception as e:
                 pass
+        
+        # 2. Se não encontrou, tenta buscar mensagem normal do admin (pode ter CEK temporária, mas serve como referência)
+        if not chave_antiga_hex:
+            admin_msg_normal = (
+                db.query(Message)
+                .filter_by(group_id=group.id, receiver_id=admin.id)
+                .filter(Message.key_encrypted.isnot(None))
+                .filter(not_(Message.content_encrypted.like("(%")))  # Mensagens normais
+                .order_by(Message.timestamp.desc())
+                .first()
+            )
+            if admin_msg_normal and admin_msg_normal.key_encrypted:
+                try:
+                    cek_antiga_bytes = RSAManager.decifrar_chave_sessao(admin_msg_normal.key_encrypted, admin_priv_key)
+                    chave_antiga_hex = cek_antiga_bytes.hex().upper()
+                except Exception as e:
+                    pass
+        
+        # 3. Se ainda não encontrou, tenta buscar da SessionKey como fallback
+        if not chave_antiga_hex:
+            session_entry = (
+                db.query(SessionKey)
+                .filter_by(entity_type="group", entity_id=group.id)
+                .order_by(SessionKey.created_at.desc())
+                .first()
+            )
+            if session_entry and session_entry.cek_encrypted:
+                try:
+                    if isinstance(session_entry.cek_encrypted, bytes):
+                        cek_encrypted_b64 = base64.b64encode(session_entry.cek_encrypted).decode()
+                    else:
+                        cek_encrypted_b64 = session_entry.cek_encrypted
+                    cek_antiga_bytes = RSAManager.decifrar_chave_sessao(cek_encrypted_b64, admin_priv_key)
+                    chave_antiga_hex = cek_antiga_bytes.hex().upper()
+                except Exception:
+                    pass
 
         group_chat_logger.info("\n")
         group_chat_logger.info(
@@ -962,15 +1110,44 @@ async def api_groups_regenerate_key(req: Request):
         nova_cek_bytes = bytes.fromhex(idea.get_chave_sessao_hex())
         nova_cek_hex = nova_cek_bytes.hex().upper()
         nova_cek_truncada = truncate_hex(nova_cek_hex, 8, 8)
+        
+        # Log de confidencialidade: Regeneração manual de chave
+        confidencialidade_chat_grupo_logger.info(
+            format_box(
+                title=f"ROTAÇÃO DE CHAVE DE SESSÃO: Grupo {group_name}",
+                content=[],
+                width=70,
+                char="="
+            )
+        )
+        confidencialidade_chat_grupo_logger.info(f"[0] EVENTO:")
+        confidencialidade_chat_grupo_logger.info(f"     └─ Tipo: Regeneração manual de chave")
+        confidencialidade_chat_grupo_logger.info(f"     └─ Admin: {requester}")
+        confidencialidade_chat_grupo_logger.info(f"     └─ Grupo: {group_name}")
 
         if chave_antiga_hex:
             chave_antiga_truncada = truncate_hex(chave_antiga_hex, 8, 8)
             group_chat_logger.info(f"[CHAVE_ANTIGA] Chave de sessão anterior: {chave_antiga_truncada}")
             group_chat_logger.info(f"ROTAÇÃO: Chave antiga → Nova chave gerada")
+            confidencialidade_chat_grupo_logger.info(f"[1] CHAVE_ANTIGA:")
+            confidencialidade_chat_grupo_logger.info(f"     └─ CEK (truncada): {chave_antiga_truncada}")
         else:
             group_chat_logger.info(f"[CHAVE_ANTIGA] Não foi possível recuperar")
+            confidencialidade_chat_grupo_logger.info(f"[1] CHAVE_ANTIGA:")
+            confidencialidade_chat_grupo_logger.info(f"     └─ Status: Não foi possível recuperar")
         
         group_chat_logger.info(f"[CHAVE_NOVA] Chave de sessão gerada (atual): {nova_cek_truncada}")
+        confidencialidade_chat_grupo_logger.info(f"[2] NOVA_CHAVE:")
+        confidencialidade_chat_grupo_logger.info(f"     └─ CEK (truncada): {nova_cek_truncada}")
+        cek_fp_full = _sha256(nova_cek_bytes).hexdigest()
+        cek_fp_truncado = truncate_hex(cek_fp_full, 8, 8)
+        confidencialidade_chat_grupo_logger.info(f"     └─ CEK Fingerprint: {cek_fp_truncado}")
+        confidencialidade_chat_grupo_logger.info(f"     └─ Algoritmo: IDEA-128")
+        confidencialidade_chat_grupo_logger.info(f"     └─ Tamanho: 128 bits")
+        confidencialidade_chat_grupo_logger.info(f"[3] CRIPTOGRAFIA_CEK:")
+        confidencialidade_chat_grupo_logger.info(f"     └─ Algoritmo wrap: RSA-2048/OAEP")
+        confidencialidade_chat_grupo_logger.info(f"     └─ Processo: CEK (hex) → RSA-Encrypt → CEK_wrapped (Base64)")
+        
         group_chat_logger.info(f"{'='*70}")
 
         membros = db.query(GroupMember).filter_by(group_id=group.id).all()
@@ -1011,6 +1188,11 @@ async def api_groups_regenerate_key(req: Request):
                 group_chat_logger.info(f"[3] CEK wrapada (RSA) para {membro_user.username}: {cek_enc_truncada}")
                 group_chat_logger.info(f"[4] {membro_user.username} receberá CEK wrapada com sua chave pública RSA")
                 group_chat_logger.info(f"{'-'*70}")
+                
+                # Log de confidencialidade: Resultado do wrap RSA para cada membro (regeneração manual)
+                confidencialidade_chat_grupo_logger.info(f"     └─ Wrap_RSA: {membro_user.username}")
+                confidencialidade_chat_grupo_logger.info(f"         └─ PubKey_Fingerprint: {pubkey_fingerprint}")
+                confidencialidade_chat_grupo_logger.info(f"         └─ CEK_Criptografada: {cek_enc_truncada} | Tamanho: {len(cek_enc_b64)} caracteres Base64")
 
                 # Converte Base64 → bytes se necessário
                 if isinstance(cek_enc_b64, str):
@@ -1042,6 +1224,8 @@ async def api_groups_regenerate_key(req: Request):
                 )
 
         db.commit()
+        
+        confidencialidade_chat_grupo_logger.info(f"{'='*70}\n")
 
         group_chat_logger.info(
             format_box(
@@ -1079,9 +1263,14 @@ async def api_groups_messages(group_name: str, token: str):
         )
 
         # 🔑 Ler chave privada de backend/keys/{username}/
-        priv_path = os.path.join("keys", f"{user_name}_private.pem")
-        with open(priv_path, "r") as f:
-            private_key_pem = f.read()
+        BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+        user_keys_dir = os.path.join(BACKEND_DIR, "keys", user_name)
+        priv_path = os.path.join(user_keys_dir, f"{user_name}_private.pem")
+        try:
+            with open(priv_path, "r") as f:
+                private_key_pem = f.read()
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail=f"Chave privada não encontrada para {user_name}")
 
         formatted = []
         ids_para_marcar_lidas = []

@@ -74,12 +74,18 @@ except ImportError:
 def setup_logger(name: str, filename: str, level=logging.INFO) -> logging.Logger:
     """
     Cria e configura um logger rotativo com saída no arquivo e no console.
+    Implementa singleton para evitar handlers duplicados.
 
     Args:
         name (str): Nome lógico do logger.
         filename (str): Nome do arquivo de log.
         level (int): Nível mínimo de log.
     """
+    # Singleton: verifica se logger já existe e tem handlers
+    logger = logging.getLogger(name)
+    if logger.handlers:
+        return logger
+    
     log_path = os.path.join(LOG_DIR, filename)
 
     # 🎯 Handler para arquivo (sem cores)
@@ -97,10 +103,8 @@ def setup_logger(name: str, filename: str, level=logging.INFO) -> logging.Logger
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(color_formatter)
 
-    # 🧱 Criação do logger
-    logger = logging.getLogger(name)
+    # 🧱 Configuração do logger
     logger.setLevel(level)
-    logger.handlers.clear()  # Evita handlers duplicados
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
     logger.propagate = False
@@ -121,14 +125,6 @@ def setup_logger(name: str, filename: str, level=logging.INFO) -> logging.Logger
         force_flush()
         return result
     logger.info = info_with_flush
-
-    # Log de inicialização apenas uma vez por logger
-    if not hasattr(setup_logger, '_initialized_loggers'):
-        setup_logger._initialized_loggers = set()
-    
-    if name not in setup_logger._initialized_loggers:
-        logger.info(f"🔧 Logger '{name}' inicializado (arquivo: {filename}) em {datetime.now(MANAUS_TZ)}")
-        setup_logger._initialized_loggers.add(name)
     
     return logger
 
@@ -146,6 +142,10 @@ autenticidade_logger = setup_logger("autenticidade", "autenticidade.log")
 # Loggers de chat
 individual_chat_logger = setup_logger("individual_chat", "individual_chat.log")
 group_chat_logger = setup_logger("group_chat", "group_chat.log")
+
+# Loggers de confidencialidade para chat (separados por tipo)
+confidencialidade_chat_individual_logger = setup_logger("confidencialidade_chat_individual", "confidencialidade_chat_individual.log")
+confidencialidade_chat_grupo_logger = setup_logger("confidencialidade_chat_grupo", "confidencialidade_chat_grupo.log")
 
 # ======================================================
 # 📝 Função log_event para eventos específicos
@@ -177,11 +177,17 @@ def log_event(event_type: str, username: str, message: str):
         confidencialidade_logger.info(f"[{event_type}] {username}: {message}")
 
 # ======================================================
-# 🟢 Mensagens iniciais de status
+# Mensagens iniciais de status (apenas uma vez por logger)
 # ======================================================
-confidencialidade_logger.info("🔒 Logger de confidencialidade inicializado.")
-integridade_logger.info("🛡️ Logger de integridade inicializado.")
-disponibilidade_logger.info("🌐 Logger de disponibilidade inicializado.")
-autenticidade_logger.info("🔑 Logger de autenticidade inicializado.")
-individual_chat_logger.info("💬 Logger de chat individual inicializado.")
-group_chat_logger.info("👥 Logger de chat em grupo inicializado.")
+_initialized_loggers = set()
+
+def _log_initialization(logger, message):
+    """Registra mensagem de inicialização apenas uma vez por logger."""
+    logger_name = logger.name
+    if logger_name not in _initialized_loggers:
+        # Usar DEBUG ao invés de INFO para não poluir os logs principais
+        logger.debug(message)
+        _initialized_loggers.add(logger_name)
+
+# Mensagens de inicialização removidas para não poluir os logs
+# Os loggers já são inicializados automaticamente quando criados

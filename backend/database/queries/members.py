@@ -11,9 +11,9 @@ import os
 import base64
 from datetime import datetime, timezone, timedelta
 from hashlib import sha256
-from sqlalchemy import text
+from sqlalchemy import text, not_
 from backend.auth.models import GroupMember, User, Group, SessionKey, Message
-from backend.utils.logger_config import group_chat_logger
+from backend.utils.logger_config import group_chat_logger, confidencialidade_logger, confidencialidade_chat_grupo_logger
 from backend.utils.db_utils import safe_db_operation
 from backend.crypto.idea_manager import IDEAManager
 from backend.crypto.rsa_manager import RSAManager
@@ -48,17 +48,10 @@ def add_member(db, username: str, group_name: str):
     db.add(member)
     db.commit()
 
-    # 2️⃣ Busca CEK atual (última session_key) - para mostrar chave antiga
-    session_entry = (
-        db.query(SessionKey)
-        .filter_by(entity_type="group", entity_id=group.id)
-        .order_by(SessionKey.created_at.desc())
-        .first()
-    )
-
-    # Busca chave antiga (se existir) através de uma mensagem do admin
+    # 2️⃣ Busca CEK atual - para mostrar chave antiga
     admin_user = db.query(User).get(group.admin_id)
     chave_antiga_hex = None
+    
     if admin_user:
         try:
             # 🔑 Ler chave privada de backend/keys/{username}/
@@ -68,21 +61,61 @@ def add_member(db, username: str, group_name: str):
             with open(admin_priv_path, "r") as f:
                 admin_priv_key = f.read()
 
-            admin_msg_antiga = (
+            # Estratégia: Busca a CEK de sessão do grupo (não a CEK temporária das mensagens)
+            # 1. Primeiro tenta buscar mensagem de atualização de chave do admin (tem a CEK de sessão)
+            admin_msg_chave = (
                 db.query(Message)
                 .filter_by(group_id=group.id, receiver_id=admin_user.id)
                 .filter(Message.key_encrypted.isnot(None))
+                .filter(Message.content_encrypted.like("(%"))  # Mensagens de atualização de chave
                 .order_by(Message.timestamp.desc())
                 .first()
             )
-
-            if admin_msg_antiga:
+            
+            if admin_msg_chave and admin_msg_chave.key_encrypted:
                 try:
-                    cek_antiga_bytes = RSAManager.decifrar_chave_sessao(admin_msg_antiga.key_encrypted, admin_priv_key)
+                    cek_antiga_bytes = RSAManager.decifrar_chave_sessao(admin_msg_chave.key_encrypted, admin_priv_key)
                     chave_antiga_hex = cek_antiga_bytes.hex().upper()
-                except Exception:
+                except Exception as e:
                     pass
-        except Exception:
+            
+            # 2. Se não encontrou, tenta buscar mensagem normal do admin (pode ter CEK temporária, mas serve como referência)
+            if not chave_antiga_hex:
+                admin_msg_normal = (
+                    db.query(Message)
+                    .filter_by(group_id=group.id, receiver_id=admin_user.id)
+                    .filter(Message.key_encrypted.isnot(None))
+                    .filter(not_(Message.content_encrypted.like("(%")))  # Mensagens normais
+                    .order_by(Message.timestamp.desc())
+                    .first()
+                )
+                if admin_msg_normal and admin_msg_normal.key_encrypted:
+                    try:
+                        cek_antiga_bytes = RSAManager.decifrar_chave_sessao(admin_msg_normal.key_encrypted, admin_priv_key)
+                        chave_antiga_hex = cek_antiga_bytes.hex().upper()
+                    except Exception as e:
+                        pass
+            
+            # 3. Se ainda não encontrou, tenta buscar da SessionKey como fallback
+            if not chave_antiga_hex:
+                session_entry = (
+                    db.query(SessionKey)
+                    .filter_by(entity_type="group", entity_id=group.id)
+                    .order_by(SessionKey.created_at.desc())
+                    .first()
+                )
+                if session_entry and session_entry.cek_encrypted:
+                    try:
+                        if isinstance(session_entry.cek_encrypted, bytes):
+                            cek_encrypted_b64 = base64.b64encode(session_entry.cek_encrypted).decode()
+                        else:
+                            cek_encrypted_b64 = session_entry.cek_encrypted
+                        cek_antiga_bytes = RSAManager.decifrar_chave_sessao(cek_encrypted_b64, admin_priv_key)
+                        chave_antiga_hex = cek_antiga_bytes.hex().upper()
+                    except Exception:
+                        pass
+        except Exception as e:
+            # Log do erro para debug
             pass
 
     # 3️⃣ Gera nova CEK (rotação de chave ao adicionar membro)
@@ -98,15 +131,45 @@ def add_member(db, username: str, group_name: str):
     nova_cek = IDEAManager.gerar_chave()
     nova_cek_hex = nova_cek.hex().upper() if isinstance(nova_cek, bytes) else bytes.fromhex(nova_cek).hex().upper()
     nova_cek_truncada = truncate_hex(nova_cek_hex, 8, 8)
-
+    
+    # Log de confidencialidade: Rotações de chave em grupos
+    evento_rotacao = "Membro adicionado"
+    confidencialidade_chat_grupo_logger.info(
+        format_box(
+            title=f"ROTAÇÃO DE CHAVE DE SESSÃO: Grupo {group_name}",
+            content=[],
+            width=70,
+            char="="
+        )
+    )
+    confidencialidade_chat_grupo_logger.info(f"[0] EVENTO:")
+    confidencialidade_chat_grupo_logger.info(f"     └─ Tipo: {evento_rotacao}")
+    confidencialidade_chat_grupo_logger.info(f"     └─ Membro: {username}")
+    confidencialidade_chat_grupo_logger.info(f"     └─ Grupo: {group_name}")
+    
     if chave_antiga_hex:
         chave_antiga_truncada = truncate_hex(chave_antiga_hex, 8, 8)
         group_chat_logger.info(f"🔑 [CHAVE_ANTIGA] Chave de sessão anterior: {chave_antiga_truncada}")
         group_chat_logger.info(f"🔄 ROTAÇÃO: Chave antiga → Nova chave gerada")
+        confidencialidade_chat_grupo_logger.info(f"[1] CHAVE_ANTIGA:")
+        confidencialidade_chat_grupo_logger.info(f"     └─ CEK (truncada): {chave_antiga_truncada}")
     else:
         group_chat_logger.info(f"🔑 [CHAVE_ANTIGA] Nenhuma (primeira chave do grupo)")
+        confidencialidade_chat_grupo_logger.info(f"[1] CHAVE_ANTIGA:")
+        confidencialidade_chat_grupo_logger.info(f"     └─ Status: Nenhuma (primeira chave do grupo)")
     
     group_chat_logger.info(f"🔑 [CHAVE_NOVA] Chave de sessão gerada (atual): {nova_cek_truncada}")
+    confidencialidade_chat_grupo_logger.info(f"[2] NOVA_CHAVE:")
+    confidencialidade_chat_grupo_logger.info(f"     └─ CEK (truncada): {nova_cek_truncada}")
+    cek_fp_full = sha256(nova_cek if isinstance(nova_cek, bytes) else nova_cek.encode()).hexdigest()
+    cek_fp_truncado = truncate_hex(cek_fp_full, 8, 8)
+    confidencialidade_chat_grupo_logger.info(f"     └─ CEK Fingerprint: {cek_fp_truncado}")
+    confidencialidade_chat_grupo_logger.info(f"     └─ Algoritmo: IDEA-128")
+    confidencialidade_chat_grupo_logger.info(f"     └─ Tamanho: 128 bits")
+    confidencialidade_chat_grupo_logger.info(f"[3] CRIPTOGRAFIA_CEK:")
+    confidencialidade_chat_grupo_logger.info(f"     └─ Algoritmo wrap: RSA-2048/OAEP")
+    confidencialidade_chat_grupo_logger.info(f"     └─ Processo: CEK (hex) → RSA-Encrypt → CEK_wrapped (Base64)")
+    
     group_chat_logger.info(f"{'='*70}")
 
     # 4️⃣ Fingerprint SHA256 da CEK (antes de cifrar)
@@ -155,6 +218,11 @@ def add_member(db, username: str, group_name: str):
         group_chat_logger.info(f"🔒 [3] CEK wrapada (RSA) para {membro_user.username}: {cek_enc_truncada}")
         group_chat_logger.info(f"📨 [4] {membro_user.username} receberá CEK wrapada com sua chave pública RSA")
         group_chat_logger.info(f"{'-'*70}")
+        
+        # Log de confidencialidade: Resultado do wrap RSA para cada membro
+        confidencialidade_chat_grupo_logger.info(f"     └─ Wrap_RSA: {membro_user.username}")
+        confidencialidade_chat_grupo_logger.info(f"         └─ PubKey_Fingerprint: {chave_publica_fingerprint}")
+        confidencialidade_chat_grupo_logger.info(f"         └─ CEK_Criptografada: {cek_enc_truncada} | Tamanho: {len(cek_cifrada_full)} caracteres Base64")
 
         # 🔒 Converte Base64 → bytes se necessário
         if isinstance(cek_cifrada, str):
@@ -162,7 +230,6 @@ def add_member(db, username: str, group_name: str):
         else:
             cek_cifrada_bytes = cek_cifrada
 
-        # Armazena CEK cifrada + fingerprint
         db.execute(
             text("INSERT OR REPLACE INTO session_keys (entity_type, entity_id, cek_encrypted, cek_fingerprint, created_at) VALUES (:entity_type, :entity_id, :cek_encrypted, :cek_fingerprint, :created_at)"),
             {
@@ -196,12 +263,13 @@ def add_member(db, username: str, group_name: str):
         )
     )
     group_chat_logger.info("\n")
+    
+    confidencialidade_chat_grupo_logger.info(f"{'='*70}\n")
+    
     return member
 
 
-# ======================================================
 # ➖ Remover membro e rotacionar CEK
-# ======================================================
 @safe_db_operation
 def remove_member(db, username: str, group_name: str):
     """Remove membro do grupo, transfere admin se necessário e rotaciona CEK."""
@@ -238,6 +306,7 @@ def remove_member(db, username: str, group_name: str):
     # Busca chave antiga antes de remover (usa admin atual)
     admin_user = db.query(User).get(group.admin_id)
     chave_antiga_hex = None
+    
     if admin_user:
         try:
             # 🔑 Ler chave privada de backend/keys/{username}/
@@ -247,21 +316,61 @@ def remove_member(db, username: str, group_name: str):
             with open(admin_priv_path, "r") as f:
                 admin_priv_key = f.read()
 
-            admin_msg_antiga = (
+            # Estratégia: Busca a CEK de sessão do grupo (não a CEK temporária das mensagens)
+            # 1. Primeiro tenta buscar mensagem de atualização de chave do admin (tem a CEK de sessão)
+            admin_msg_chave = (
                 db.query(Message)
                 .filter_by(group_id=group.id, receiver_id=admin_user.id)
                 .filter(Message.key_encrypted.isnot(None))
+                .filter(Message.content_encrypted.like("(%"))  # Mensagens de atualização de chave
                 .order_by(Message.timestamp.desc())
                 .first()
             )
-
-            if admin_msg_antiga:
+            
+            if admin_msg_chave and admin_msg_chave.key_encrypted:
                 try:
-                    cek_antiga_bytes = RSAManager.decifrar_chave_sessao(admin_msg_antiga.key_encrypted, admin_priv_key)
+                    cek_antiga_bytes = RSAManager.decifrar_chave_sessao(admin_msg_chave.key_encrypted, admin_priv_key)
                     chave_antiga_hex = cek_antiga_bytes.hex().upper()
-                except Exception:
+                except Exception as e:
                     pass
-        except Exception:
+            
+            # 2. Se não encontrou, tenta buscar mensagem normal do admin (pode ter CEK temporária, mas serve como referência)
+            if not chave_antiga_hex:
+                admin_msg_normal = (
+                    db.query(Message)
+                    .filter_by(group_id=group.id, receiver_id=admin_user.id)
+                    .filter(Message.key_encrypted.isnot(None))
+                    .filter(not_(Message.content_encrypted.like("(%")))  # Mensagens normais
+                    .order_by(Message.timestamp.desc())
+                    .first()
+                )
+                if admin_msg_normal and admin_msg_normal.key_encrypted:
+                    try:
+                        cek_antiga_bytes = RSAManager.decifrar_chave_sessao(admin_msg_normal.key_encrypted, admin_priv_key)
+                        chave_antiga_hex = cek_antiga_bytes.hex().upper()
+                    except Exception as e:
+                        pass
+            
+            # 3. Se ainda não encontrou, tenta buscar da SessionKey como fallback
+            if not chave_antiga_hex:
+                session_entry = (
+                    db.query(SessionKey)
+                    .filter_by(entity_type="group", entity_id=group.id)
+                    .order_by(SessionKey.created_at.desc())
+                    .first()
+                )
+                if session_entry and session_entry.cek_encrypted:
+                    try:
+                        if isinstance(session_entry.cek_encrypted, bytes):
+                            cek_encrypted_b64 = base64.b64encode(session_entry.cek_encrypted).decode()
+                        else:
+                            cek_encrypted_b64 = session_entry.cek_encrypted
+                        cek_antiga_bytes = RSAManager.decifrar_chave_sessao(cek_encrypted_b64, admin_priv_key)
+                        chave_antiga_hex = cek_antiga_bytes.hex().upper()
+                    except Exception:
+                        pass
+        except Exception as e:
+            # Log do erro para debug
             pass
 
     # ⚙️ Remove o membro
@@ -355,15 +464,53 @@ def remove_member(db, username: str, group_name: str):
     nova_cek = IDEAManager.gerar_chave()
     nova_cek_hex = nova_cek.hex().upper() if isinstance(nova_cek, bytes) else bytes.fromhex(nova_cek).hex().upper()
     nova_cek_truncada = truncate_hex(nova_cek_hex, 8, 8)
-
+    
+    # Log de confidencialidade: Rotações de chave em grupos (remoção)
+    # Identifica se foi saída voluntária ou remoção pelo admin
+    is_leave = getattr(remove_member, '_skip_remove_log', False)
+    if is_admin:
+        evento_rotacao = "Admin saiu"
+    elif is_leave:
+        evento_rotacao = "Membro saiu"
+    else:
+        evento_rotacao = "Membro removido"
+    
+    confidencialidade_chat_grupo_logger.info(
+        format_box(
+            title=f"ROTAÇÃO DE CHAVE DE SESSÃO: Grupo {group_name}",
+            content=[],
+            width=70,
+            char="="
+        )
+    )
+    confidencialidade_chat_grupo_logger.info(f"[0] EVENTO:")
+    confidencialidade_chat_grupo_logger.info(f"     └─ Tipo: {evento_rotacao}")
+    confidencialidade_chat_grupo_logger.info(f"     └─ Membro: {username}")
+    confidencialidade_chat_grupo_logger.info(f"     └─ Grupo: {group_name}")
+    
     if chave_antiga_hex:
         chave_antiga_truncada = truncate_hex(chave_antiga_hex, 8, 8)
         group_chat_logger.info(f"🔑 [CHAVE_ANTIGA] Chave de sessão anterior: {chave_antiga_truncada}")
         group_chat_logger.info(f"🔄 ROTAÇÃO: Chave antiga → Nova chave gerada")
+        confidencialidade_chat_grupo_logger.info(f"[1] CHAVE_ANTIGA:")
+        confidencialidade_chat_grupo_logger.info(f"     └─ CEK (truncada): {chave_antiga_truncada}")
     else:
         group_chat_logger.info(f"🔑 [CHAVE_ANTIGA] Não foi possível recuperar")
+        confidencialidade_chat_grupo_logger.info(f"[1] CHAVE_ANTIGA:")
+        confidencialidade_chat_grupo_logger.info(f"     └─ Status: Não foi possível recuperar")
     
     group_chat_logger.info(f"🔑 [CHAVE_NOVA] Chave de sessão gerada (atual): {nova_cek_truncada}")
+    confidencialidade_chat_grupo_logger.info(f"[2] NOVA_CHAVE:")
+    confidencialidade_chat_grupo_logger.info(f"     └─ CEK (truncada): {nova_cek_truncada}")
+    cek_fp_full = sha256(nova_cek if isinstance(nova_cek, bytes) else nova_cek.encode()).hexdigest()
+    cek_fp_truncado = truncate_hex(cek_fp_full, 8, 8)
+    confidencialidade_chat_grupo_logger.info(f"     └─ CEK Fingerprint: {cek_fp_truncado}")
+    confidencialidade_chat_grupo_logger.info(f"     └─ Algoritmo: IDEA-128")
+    confidencialidade_chat_grupo_logger.info(f"     └─ Tamanho: 128 bits")
+    confidencialidade_chat_grupo_logger.info(f"[3] CRIPTOGRAFIA_CEK:")
+    confidencialidade_chat_grupo_logger.info(f"     └─ Algoritmo wrap: RSA-2048/OAEP")
+    confidencialidade_chat_grupo_logger.info(f"     └─ Processo: CEK (hex) → RSA-Encrypt → CEK_wrapped (Base64)")
+    
     group_chat_logger.info(f"{'='*70}")
 
     cek_fingerprint = sha256(
@@ -408,6 +555,11 @@ def remove_member(db, username: str, group_name: str):
         group_chat_logger.info(f"🔒 [3] CEK wrapada (RSA) para {membro.username}: {cek_enc_truncada}")
         group_chat_logger.info(f"📨 [4] {membro.username} receberá CEK wrapada com sua chave pública RSA")
         group_chat_logger.info(f"{'-'*70}")
+        
+        # Log de confidencialidade: Resultado do wrap RSA para cada membro (remoção)
+        confidencialidade_chat_grupo_logger.info(f"     └─ Wrap_RSA: {membro.username}")
+        confidencialidade_chat_grupo_logger.info(f"         └─ PubKey_Fingerprint: {chave_publica_fingerprint}")
+        confidencialidade_chat_grupo_logger.info(f"         └─ CEK_Criptografada: {cek_enc_truncada} | Tamanho: {len(cek_cifrada_full)} caracteres Base64")
 
         if isinstance(cek_cifrada, str):
             cek_cifrada_bytes = base64.b64decode(cek_cifrada)
@@ -447,6 +599,8 @@ def remove_member(db, username: str, group_name: str):
         )
     )
     group_chat_logger.info("\n")
+    
+    confidencialidade_chat_grupo_logger.info(f"{'='*70}\n")
 
 
 # ======================================================
