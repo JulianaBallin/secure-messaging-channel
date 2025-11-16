@@ -1,0 +1,34 @@
+# Dockerfile para o Frontend (Next.js)
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copiar package files
+COPY frontend/package*.json ./
+
+# Instalar dependências
+RUN npm ci
+
+# Copiar código e build
+COPY frontend/ .
+RUN npm run build
+
+# Imagem de produção
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copiar arquivos de build e dependências
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/next.config.ts ./
+COPY --from=builder /app/tsconfig.json ./
+
+# Expor porta
+EXPOSE 3000
+
+# Comando para desenvolvimento (com hot reload)
+CMD ["npm", "run", "dev"]
+

@@ -26,8 +26,8 @@ export default function LoginPage() {
       localStorage.setItem("token", data.token);
       localStorage.setItem("username", data.username);
       router.push("/chat");
-    } catch (e:any) {
-      setError(e.message || "Falha no login");
+    } catch (e: unknown) {
+      setError((e instanceof Error ? e.message : "Falha no login") || "Falha no login");
     } finally {
       setLoading(false);
     }

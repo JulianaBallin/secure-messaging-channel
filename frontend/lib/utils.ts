@@ -50,8 +50,9 @@ export async function fetchJSON(path: string, options: RequestInit = {}) {
 
     // Retorna JSON parseado
     return res.json();
-  } catch (err: any) {
-    console.error(`[fetchJSON] Falha ao buscar ${cleanPath}:`, err.message);
+  } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : "Erro desconhecido";
+    console.error(`[fetchJSON] Falha ao buscar ${cleanPath}:`, errorMessage);
     throw err;
   }
 }

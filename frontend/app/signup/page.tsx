@@ -47,16 +47,16 @@ export default function SignupPage() {
       );
 
       // 🚀 4️⃣ Envia o cadastro pro backend
-      const data = await fetchJSON("/api/register", {
+      await fetchJSON("/api/register", {
         method: "POST",
         body: JSON.stringify({ username, password, public_key: pubPem }),
       });
 
       setOk("Conta criada! Faça login.");
       setTimeout(() => router.push("/login"), 800);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      setError(e.message || "Falha no cadastro");
+      setError((e instanceof Error ? e.message : "Falha no cadastro") || "Falha no cadastro");
     } finally {
       setLoading(false);
     }

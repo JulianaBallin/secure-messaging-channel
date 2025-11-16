@@ -1,0 +1,62 @@
+services:
+  # BACKEND 
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ciphertalk-backend
+    ports:
+      - "8000:8000"  # API REST
+      - "8888:8888"  # TCP/TLS Server
+    volumes:
+      # Persistir banco SQLite
+      - ./backend/database:/app/backend/database
+      # Persistir chaves privadas
+      - ./backend/keys:/app/backend/keys
+      # Persistir logs
+      - ./logs:/app/logs
+      # Hot reload em desenvolvimento (comentar em produção)
+      - ./backend:/app/backend
+    environment:
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=8888
+      - DATABASE_URL=sqlite:///./backend/database/cipher_talk.db
+      - JWT_SECRET_KEY=your-super-secret-jwt-key-change-in-production-min-32-chars-long-for-security
+      - JWT_EXPIRE_MINUTES=30
+    networks:
+      - ciphertalk-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # FRONTEND 
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: ciphertalk-frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      # Hot reload em desenvolvimento (comentar em produção)
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NODE_ENV=development
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - ciphertalk-network
+    restart: unless-stopped
+
+networks:
+  ciphertalk-network:
+    driver: bridge
+
