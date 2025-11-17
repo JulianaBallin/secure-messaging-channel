@@ -25,6 +25,8 @@ from backend.utils.logger_config import (
     group_chat_logger,
     confidencialidade_logger,
     confidencialidade_chat_grupo_logger,
+    disponibilidade_logger,
+    integridade_logger,
 )
 # ======================================================
 # 🔐 CONFIGURAÇÃO DE REDE (TLS)
@@ -431,6 +433,10 @@ async def api_inbox_contact(username: str, contact: str):
             is_outgoing = sender.username == username
             content_plain = ""
 
+            sender_id = msg.sender_id
+            receiver_id = msg.receiver_id
+            msg_hash = msg.content_hash
+
             try:
                 if not is_outgoing:
                     # Verifica se deve logar (mensagem não lida)
@@ -460,6 +466,11 @@ async def api_inbox_contact(username: str, contact: str):
                         )
                         individual_chat_logger.info("\n")
                         ids_para_marcar_lidas.append(msg.id)
+
+                        integridade_logger.info(f"[PRIVATE RECEIVE] Mensagem recebida ([{username}]<-[{sender.username}]):")
+                        integridade_logger.info(f"          └─ Id do remetente: {sender_id}")
+                        integridade_logger.info(f"          └─ Id do destinatário: {receiver_id}")
+                        integridade_logger.info(f"          └─ Hash da mensagem: {msg_hash}")
                 else:
                     sc = self_copy_map.get(msg.content_hash) if msg.content_hash else None
                     if sc:
@@ -546,6 +557,14 @@ async def api_send_message(req: Request):
         )
         db.add(message_to_receiver)
         db.commit()
+
+        disponibilidade_logger.info(f"[PRIVATE MESSAGE] Salvamento de mensagem [{sender_user.username}]->[{receiver.username}] no banco de dados")
+        disponibilidade_logger.info(f"[PRIVATE MESSAGE] Mensagem (criptografada) enviada: {content_encrypted_b64}")
+
+        integridade_logger.info(f"[PRIVATE SEND] Mensagem enviada ([{sender_user.username}]->[{receiver.username}]):")
+        integridade_logger.info(f"          └─ Id do remetente: {sender_user.id}")
+        integridade_logger.info(f"          └─ Id do destinatário: {receiver.id}")
+        integridade_logger.info(f"          └─ Hash da mensagem enviada: {content_hash}")
         
         # 🚀 Retorna resposta imediatamente (libera botão "Enviando...")
         message_id = message_to_receiver.id
@@ -953,6 +972,14 @@ async def api_groups_send(req: Request):
             membros_com_chave.append(user.username)
 
         db.commit()
+
+        disponibilidade_logger.info(f"[GROUP MESSAGE] Salvamento de mensagem [{user_sender.username}]->[{group.name}] no banco de dados")
+        disponibilidade_logger.info(f"[GROUP MESSAGE] Mensagem (criptografada) enviada: {cipher}")
+
+        integridade_logger.info(f"[GROUP SEND] Mensagem enviada ([{user_sender.username}]->[{group.name}]):")
+        integridade_logger.info(f"          └─ Id do remetente: {user_sender.id}")
+        integridade_logger.info(f"          └─ Id do grupo: {group.id}")
+        integridade_logger.info(f"          └─ Conteúdo da mensagem enviada: {cipher}")
         
         confidencialidade_chat_grupo_logger.info(f"{'='*70}\n")
 
@@ -1281,6 +1308,10 @@ async def api_groups_messages(group_name: str, token: str):
             sender = db.query(User).get(msg.sender_id)
             sender_name = sender.username if sender else "Desconhecido"
 
+            sender_id = msg.sender_id
+            content_hash = msg.content_encrypted
+
+
             try:
                 if msg.content_encrypted.startswith("("):
                     plain = "🔑 Atualização de segurança no grupo"
@@ -1311,6 +1342,11 @@ async def api_groups_messages(group_name: str, token: str):
                         )
                         group_chat_logger.info("\n")
                         ids_para_marcar_lidas.append(msg.id)
+
+                        integridade_logger.info(f"[GROUP RECEIVE] Mensagem recebida ([{group_name}]: [{user_name}]<-[{sender_name}])")
+                        integridade_logger.info(f"          └─ Id do remetente: {sender_id}")
+                        integridade_logger.info(f"          └─ Id do grupo: {group.id}")
+                        integridade_logger.info(f"          └─ Conteúdo da mensagem enviada: {content_hash}")
 
             except Exception as e:
                 print(f"[GROUP_DEC_ERR] {e}")
