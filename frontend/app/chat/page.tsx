@@ -45,6 +45,7 @@ export default function ChatPage() {
   const [newMember, setNewMember] = useState("");
   const [loading, setLoading] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [unreadMap, setUnreadMap] = useState<Record<string, number>>({});
   const bottomRef = useRef<HTMLDivElement>(null);
   const token =
     typeof window !== "undefined" ? localStorage.getItem("token") : null;
@@ -70,6 +71,19 @@ export default function ChatPage() {
     }
   };
 
+  const loadUnread = async () => {
+    if (!user) return;
+    try {
+      const data = await fetchJSON(`/api/unread/${user}`);
+      const map: Record<string, number> = {};
+      (data.unread || []).forEach((u: any) => {
+        map[u.contact] = u.unread_count;
+      });
+      setUnreadMap(map);
+    } catch (e) {
+      console.error("Erro ao carregar unread:", e);
+    }
+  };
 
   const scrollToBottom = () => {
     // Evita rolagem forçada em loop
@@ -86,6 +100,12 @@ export default function ChatPage() {
     return () => clearInterval(id);
   }, [user, mode, receiver]);
 
+  useEffect(() => {
+    if (!user) return;
+    loadUnread();
+    const id = setInterval(loadUnread, 2000);
+    return () => clearInterval(id);
+  }, [user]);
 
   const sendPrivate = async () => {
     if (!user || !receiver || !text.trim()) {
@@ -320,12 +340,19 @@ export default function ChatPage() {
                         onClick={() => {
                           setReceiver(c);
                           loadInboxFor(c);
+                          loadUnread(); // limpa o unread após abrir o chat
                         }}
-                        className={`w-full text-left px-3 py-2 hover:bg-gray-200 ${
+                        className={`w-full text-left px-3 py-2 flex justify-between items-center hover:bg-gray-200 ${
                           receiver === c ? "bg-blue-100 font-semibold" : ""
                         }`}
                       >
-                        {c}
+                        <span>{c}</span>
+
+                        {unreadMap[c] > 0 && (
+                          <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full">
+                            {unreadMap[c]}
+                          </span>
+                        )}
                       </button>
                     ))
                   )}
@@ -443,21 +470,25 @@ export default function ChatPage() {
                 <>
                   <h2 className="text-lg font-semibold text-gray-700">
                     💬 Grupo: {selectedGroup}
+                    {!groups.some(g => g.name === selectedGroup) && " (histórico)"}
                   </h2>
 
-                  <Button
-                    onClick={async () => {
-                      const data = await fetchJSON(`/api/groups/${selectedGroup}/members?token=${token}`);
-                      alert(
-                        `👑 Admin: ${data.admin}\n\n👥 Membros:\n${data.members.join("\n")}`
-                      );
-                    }}
-                    variant="outline"
-                  >
-                    📋 Ver Membros
-                  </Button>
+                  {groups.some(g => g.name === selectedGroup) && (
+                    <Button
+                      onClick={async () => {
+                        const data = await fetchJSON(`/api/groups/${selectedGroup}/members?token=${token}`);
+                        alert(
+                          `👑 Admin: ${data.admin}\n\n👥 Membros:\n${data.members.join("\n")}`
+                        );
+                      }}
+                      variant="outline"
+                    >
+                      📋 Ver Membros
+                    </Button>
+                  )}
                   
-                  {isAdmin && (
+                  {/* Só mostra ferramentas de admin se AINDA está no grupo */}
+                  {isAdmin && groups.some(g => g.name === selectedGroup) && (
                     <div className="flex flex-wrap gap-2 mb-2">
                       <Input
                         placeholder="Gerenciar membro..."
@@ -478,38 +509,39 @@ export default function ChatPage() {
                     </div>
                   )}
 
-                  {/* 🚪 Botão para sair do grupo (admin ou membro comum) */}
-                  <div className="mt-2">
-                    <Button
-                      onClick={async () => {
-                        if (!selectedGroup || !token) return;
-                        const confirmLeave = confirm(
-                          "Tem certeza que deseja sair do grupo? Se for o admin, o cargo será transferido automaticamente."
-                        );
-                        if (!confirmLeave) return;
+                  {/* Só mostra botão de sair se AINDA está no grupo */}
+                  {groups.some(g => g.name === selectedGroup) && (
+                    <div className="mt-2">
+                      <Button
+                        onClick={async () => {
+                          if (!selectedGroup || !token) return;
+                          const confirmLeave = confirm(
+                            "Tem certeza que deseja sair do grupo? Se for o admin, o cargo será transferido automaticamente."
+                          );
+                          if (!confirmLeave) return;
 
-                        try {
-                          const res = await fetchJSON(`/api/groups/leave`, {
-                            method: "POST",
-                            body: JSON.stringify({ token, group: selectedGroup }),
-                          });
-                          alert(res.message || "👋 Você saiu do grupo.");
-                          // Atualiza lista de grupos
-                          loadGroups();
-                          setSelectedGroup(null);
-                        } catch (e) {
-                          console.error(e);
-                          alert("❌ Erro ao sair do grupo.");
-                        }
-                      }}
-                      variant="outline"
-                      className="text-red-600 border-red-600"
-                    >
-                      🚪 Sair do grupo
-                    </Button>
-                  </div>
+                          try {
+                            const res = await fetchJSON(`/api/groups/leave`, {
+                              method: "POST",
+                              body: JSON.stringify({ token, group: selectedGroup }),
+                            });
+                            alert(res.message || "👋 Você saiu do grupo.");
+                            loadGroups();
+                            setSelectedGroup(null);
+                          } catch (e) {
+                            console.error(e);
+                            alert("❌ Erro ao sair do grupo.");
+                          }
+                        }}
+                        variant="outline"
+                        className="text-red-600 border-red-600"
+                      >
+                        🚪 Sair do grupo
+                      </Button>
+                    </div>
+                  )}
 
-
+                  {/* 🔥 MENSAGENS DO GRUPO – sempre aparecem, mesmo se saiu */}
                   <div className="h-80 overflow-y-auto bg-white border rounded-xl p-4 space-y-3">
                     {groupMessages.length === 0 && (
                       <p className="text-sm text-gray-500 text-center">
@@ -548,21 +580,24 @@ export default function ChatPage() {
                     <div ref={bottomRef} />
                   </div>
 
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="Digite uma mensagem..."
-                      value={text}
-                      onChange={(e) => setText(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && sendGroupMessage()}
-                    />
-                    <Button
-                      onClick={sendGroupMessage}
-                      disabled={loading}
-                      className="bg-blue-600 hover:bg-blue-700 text-white"
-                    >
-                      {loading ? "Enviando..." : "Enviar"}
-                    </Button>
-                  </div>
+                  {/* 🔥 INPUT – só aparece se ainda for membro */}
+                  {groups.some(g => g.name === selectedGroup) && (
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Digite uma mensagem..."
+                        value={text}
+                        onChange={(e) => setText(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && sendGroupMessage()}
+                      />
+                      <Button
+                        onClick={sendGroupMessage}
+                        disabled={loading}
+                        className="bg-blue-600 hover:bg-blue-700 text-white"
+                      >
+                        {loading ? "Enviando..." : "Enviar"}
+                      </Button>
+                    </div>
+                  )}
                 </>
               )}
             </>

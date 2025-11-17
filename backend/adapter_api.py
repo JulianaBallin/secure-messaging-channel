@@ -8,6 +8,7 @@ from typing import Dict, TypedDict, Optional
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sqlalchemy import func 
 
 from backend.database.connection import SessionLocal
 from backend.server.handlers_rest import handle_register_rest, handle_login_rest
@@ -184,9 +185,11 @@ async def api_register(req: AuthRequest):
         # 2️⃣ Gera par de chaves
         privada_pem_str, publica_pem_str = RSAManager.gerar_par_chaves()
 
-        # 3️⃣ Salvar chave privada em backend/keys/{username}/
-        BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
-        user_keys_dir = os.path.join(BACKEND_DIR, "keys", req.username)
+        # 3️⃣ Salvar chave privada em keys/{username}/
+        # raiz do projeto
+        PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        # pasta keys/ sem subpastas
+        user_keys_dir = os.path.join(PROJECT_ROOT, "keys")
         os.makedirs(user_keys_dir, exist_ok=True)
         
         private_key_path = os.path.join(user_keys_dir, f"{req.username}_private.pem")
@@ -291,10 +294,10 @@ async def api_inbox(username: str):
         if not user:
             raise HTTPException(status_code=404, detail=f"Usuário '{username}' não encontrado.")
 
-        # 🔑 Ler chave privada de backend/keys/{username}/
+        # 🔑 Ler chave privada de keys/{username}/
         BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
         user_keys_dir = os.path.join(BACKEND_DIR, "keys", username)
-        priv_path = os.path.join(user_keys_dir, f"{username}_private.pem")
+        priv_path = os.path.join("keys", f"{username}_private.pem")
         try:
             with open(priv_path, "r") as f:
                 private_key_pem = f.read()
@@ -361,10 +364,11 @@ async def api_inbox_contact(username: str, contact: str):
         if not user or not contact_user:
             raise HTTPException(status_code=404, detail="Usuário ou contato não encontrado.")
 
-        # 🔑 Ler chave privada de backend/keys/{username}/
+        # 🔑 Ler chave privada keys/{username}/
         BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
         user_keys_dir = os.path.join(BACKEND_DIR, "keys", username)
-        priv_path = os.path.join(user_keys_dir, f"{username}_private.pem")
+        priv_path = os.path.join("keys", f"{username}_private.pem")
+
         try:
             with open(priv_path, "r") as f:
                 private_key_pem = f.read()
@@ -1257,15 +1261,19 @@ async def api_groups_messages(group_name: str, token: str):
 
         msgs = (
             db.query(Message)
-            .filter(Message.group_id == group.id, Message.receiver_id == user.id)
+            .filter(Message.group_id == group.id)
+            .filter(
+                (Message.receiver_id == user.id) |
+                (Message.sender_id == user.id)
+            )
             .order_by(Message.timestamp.asc())
             .all()
         )
 
-        # 🔑 Ler chave privada de backend/keys/{username}/
+        # 🔑 Ler chave privada de keys/{username}/
         BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
         user_keys_dir = os.path.join(BACKEND_DIR, "keys", user_name)
-        priv_path = os.path.join(user_keys_dir, f"{user_name}_private.pem")
+        priv_path = os.path.join("keys", f"{user_name}_private.pem")
         try:
             with open(priv_path, "r") as f:
                 private_key_pem = f.read()
@@ -1442,5 +1450,35 @@ async def api_groups_leave(req: Request):
         # Captura qualquer outro erro não esperado
         group_chat_logger.error(f"❌ Erro inesperado ao processar saída do grupo: {e}")
         raise HTTPException(status_code=500, detail="Erro ao processar saída do grupo.")
+    finally:
+        db.close()
+
+@app.get("/api/unread/{username}")
+async def api_unread(username: str):
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter_by(username=username).first()
+        if not user:
+            raise HTTPException(404, "Usuário não encontrado.")
+
+        unread = (
+            db.query(Message.sender_id, User.username, func.count(Message.id))
+            .join(User, User.id == Message.sender_id)
+            .filter(Message.receiver_id == user.id)
+            .filter(Message.is_read == False)
+            .filter(Message.group_id == None)
+            .group_by(Message.sender_id)
+            .all()
+        )
+
+        result = []
+        for sender_id, username_sender, count in unread:
+            result.append({
+                "contact": username_sender,
+                "unread_count": count
+            })
+
+        return {"unread": result}
+
     finally:
         db.close()
