@@ -134,7 +134,6 @@ def setup_logger(name: str, filename: str, level=logging.INFO) -> logging.Logger
 
 # Loggers de segurança
 messages_logger = setup_logger("messages", "messages.log")
-confidencialidade_logger = setup_logger("confidencialidade", "confidencialidade.log")
 integridade_logger = setup_logger("integridade", "integridade.log")
 disponibilidade_logger = setup_logger("disponibilidade", "disponibilidade.log")
 autenticidade_logger = setup_logger("autenticidade", "autenticidade.log")
@@ -160,9 +159,7 @@ def log_event(event_type: str, username: str, message: str):
         message: Mensagem descritiva do evento
     """
     # Mapeia tipos de evento para os loggers apropriados
-    if event_type.startswith("CONFIDENCIALIDADE"):
-        confidencialidade_logger.info(f"[{event_type}] {username}: {message}")
-    elif event_type.startswith("INTEGRIDADE"):
+    if event_type.startswith("INTEGRIDADE"):
         integridade_logger.info(f"[{event_type}] {username}: {message}")
     elif event_type.startswith("DISPONIBILIDADE"):
         disponibilidade_logger.info(f"[{event_type}] {username}: {message}")
@@ -172,9 +169,7 @@ def log_event(event_type: str, username: str, message: str):
         individual_chat_logger.info(f"[{event_type}] {username}: {message}")
     elif event_type.startswith("GROUP_CHAT"):
         group_chat_logger.info(f"[{event_type}] {username}: {message}")
-    else:
-        # Logger padrão para eventos não categorizados
-        confidencialidade_logger.info(f"[{event_type}] {username}: {message}")
+
 
 # ======================================================
 # Mensagens iniciais de status (apenas uma vez por logger)

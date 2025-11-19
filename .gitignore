@@ -56,8 +56,6 @@ debug.log
 # ================================
 # 🔐 Configurações e Credenciais
 # ================================
-.env
-.env.*
 *.key
 *.pem
 *.crt

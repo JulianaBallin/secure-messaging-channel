@@ -13,7 +13,7 @@ from datetime import datetime, timezone, timedelta
 from hashlib import sha256
 from sqlalchemy import text, not_
 from backend.auth.models import GroupMember, User, Group, SessionKey, Message
-from backend.utils.logger_config import group_chat_logger, confidencialidade_logger, confidencialidade_chat_grupo_logger
+from backend.utils.logger_config import group_chat_logger, confidencialidade_chat_grupo_logger
 from backend.utils.db_utils import safe_db_operation
 from backend.crypto.idea_manager import IDEAManager
 from backend.crypto.rsa_manager import RSAManager

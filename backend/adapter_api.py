@@ -16,6 +16,11 @@ from backend.server.handlers_rest import handle_register_rest, handle_login_rest
 from backend.auth.models import User, Message, Group, GroupMember
 from backend.auth.security import hash_senha as hash_password
 from backend.auth.auth_jwt import verify_access_token
+from backend.server.handlers_rest import (
+    handle_register_rest,
+    handle_login_step1_rest,
+    handle_login_step2_rest,
+)
 
 # Crypto/Logs
 from backend.crypto.idea_manager import IDEAManager
@@ -24,7 +29,6 @@ from backend.utils.log_formatter import format_box, truncate_hex
 from backend.utils.logger_config import (
     individual_chat_logger,
     group_chat_logger,
-    confidencialidade_logger,
     confidencialidade_chat_grupo_logger,
     disponibilidade_logger,
     integridade_logger,
@@ -150,10 +154,14 @@ async def _startup():
 # ======================================================
 # 📦 MODELOS
 # ======================================================
-class AuthRequest(BaseModel):
+class RegisterRequest(BaseModel):
     username: str
     password: str
+    email: str
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
 
 class CreateGroupReq(BaseModel):
     token: str
@@ -171,12 +179,15 @@ class RemoveMemberReq(BaseModel):
     group: str
     username: str
 
+class TwoFARequest(BaseModel):
+    username: str
+    code: str
 
 # ======================================================
 # 👤 REGISTRO E LOGIN
 # ======================================================
 @app.post("/api/register")
-async def api_register(req: AuthRequest):
+async def api_register(req: RegisterRequest):
     def validar_senha(password: str) -> bool:
         """Política de senha segura."""
         return (
@@ -223,7 +234,8 @@ async def api_register(req: AuthRequest):
         user_data = {
             "username": req.username,
             "password": hashed_password,
-            "public_key": publica_pem_str
+            "public_key": publica_pem_str,
+            "email": req.email
         }
 
         # 5️⃣ Registra o usuário no banco
@@ -267,18 +279,22 @@ async def api_register(req: AuthRequest):
 
 
 @app.post("/api/login")
-async def api_login(req: AuthRequest):
+async def api_login_step1(req: LoginRequest):
     db = SessionLocal()
     try:
-        result, token = await handle_login_rest(db, req.dict())
-        if result.get("status") == "error":
-            raise HTTPException(status_code=401, detail=result.get("message"))
+        result, _ = await handle_login_step1_rest(db, req.dict())
+        return result
+    finally:
+        db.close()
+        
 
-        # 🔌 sobe a TLS em background para já marcar como ONLINE no servidor TCP
+@app.post("/api/login/2fa")
+async def api_login_step2(req: TwoFARequest):
+    db = SessionLocal()
+    try:
+        result, token = await handle_login_step2_rest(db, req.dict())
         if result.get("status") == "ok" and token:
-            username = result.get("username") or req.username
-            ensure_tls_connection_bg(username, token)
-
+            ensure_tls_connection_bg(result["username"], token)
         return result
     finally:
         db.close()

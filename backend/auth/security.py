@@ -1,5 +1,16 @@
 import argon2
 from backend.utils.logger_config import autenticidade_logger
+import secrets
+from datetime import datetime, timedelta, timezone
+from backend.database.connection import SessionLocal
+from backend.auth.models import User
+import smtplib
+from email.mime.text import MIMEText
+from sqlalchemy.orm import Session, object_session
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import os
 
 
 # Argon2
@@ -137,3 +148,132 @@ if __name__ == "__main__":
     
     print(f"Tempo para gerar hash: {end - start:.2f} segundos")
     print("Argon2 é lento de propósito para dificultar ataques!")
+    
+
+# 2FA - AUTENTICAÇÃO EM DOIS FATORES
+
+# Gera código aleatório (6 dígitos)
+def generate_2fa_code() -> str:
+    """Gera código random de 6 dígitos."""
+    code = f"{secrets.randbelow(999999):06d}"
+    autenticidade_logger.info(
+        f"[2FA_CODE_CREATED] Código 2FA gerado (não armazenado texto puro)."
+    )
+    return code
+
+
+# Cria hash do código 2FA e salva no banco (usando a MESMA sessão db!)
+def create_and_store_2fa(db: Session, user: User) -> str:
+    """
+    Gera o código 2FA, salva APENAS o hash + expiração na MESMA sessão do login.
+    Retorna o código real (plaintext) para envio por e-mail.
+    """
+
+    # 🔐 1) Gera o código real (não salvo)
+    code = generate_2fa_code()
+
+    # 🔑 2) Hash seguro do código
+    code_hash = ph.hash(code)
+
+    # ⏳ 3) Expira em 5 minutos
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+
+    # 📝 4) Persistir dentro da MESMA sessão db
+    user.twofa_hash = code_hash
+    user.twofa_expires_at = expires_at
+    user.twofa_verified = False
+
+    db.commit()
+
+    # 🔎 Logs de autenticidade
+    autenticidade_logger.info(
+        f"[2FA_HASH_STORED] Hash do código 2FA armazenado. "
+        f"Expiração: {expires_at.isoformat()} | User: '{user.username}'. "
+        f"Código REAL **não armazenado**."
+    )
+
+    return code  # este é o código que será enviado por e-mail
+
+
+
+# VERIFICA CÓDIGO 2FA INFORMADO
+def verify_2fa_code(user: User, provided_code: str) -> bool:
+    """
+    Verifica se o código está correto e dentro da validade.
+    """
+    if not user.twofa_hash or not user.twofa_expires_at:
+        autenticidade_logger.warning(
+            f"[2FA_INVALID_STATE] Usuário '{user.username}' tentou validar 2FA sem haver código ativo."
+        )
+        return False
+
+    # 🔧 Corrige datetime naive → timezone-aware
+    expires_at = user.twofa_expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+    if datetime.now(timezone.utc) > expires_at:
+        autenticidade_logger.warning(
+            f"[2FA_EXPIRED] Código 2FA expirado para usuário '{user.username}'."
+        )
+        return False
+
+    try:
+        ph.verify(user.twofa_hash, provided_code)
+    except Exception:
+        autenticidade_logger.warning(
+            f"[2FA_MISMATCH] Código incorreto para usuário '{user.username}'."
+        )
+        return False
+
+    # Se o código confere
+    autenticidade_logger.info(
+        f"[2FA_VERIFIED] Código 2FA validado com sucesso para '{user.username}'."
+    )
+
+    db = object_session(user)
+    user.twofa_verified = True
+    db.commit()
+
+    return True
+
+
+
+def send_2fa_email(to_email: str, code: str):
+    """
+    Envia o código 2FA via SMTP usando Mailtrap.
+    Funciona no modo sandbox (não envia para inbox real, só aparece no Mailtrap).
+    """
+
+    host = os.getenv("MAIL_HOST")
+    port = int(os.getenv("MAIL_PORT", 587))
+    user = os.getenv("MAIL_USER")
+    passwd = os.getenv("MAIL_PASS")
+    mail_from = os.getenv("MAIL_FROM", "CipherTalk <no-reply@ciphertalk.test>")
+
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = mail_from
+        msg["To"] = to_email
+        msg["Subject"] = "Seu código 2FA - CipherTalk"
+
+        body = f"""
+        <h2>🔐 Autenticação em Duas Etapas</h2>
+        <p>Seu código de autenticação é:</p>
+        <h1 style="font-size:32px;">{code}</h1>
+        <p>Ele expira em 5 minutos.</p>
+        """
+
+        msg.attach(MIMEText(body, "html"))
+
+        with smtplib.SMTP(host, port) as server:
+            server.starttls()
+            server.login(user, passwd)
+            server.sendmail(mail_from, to_email, msg.as_string())
+
+        autenticidade_logger.info(f"[2FA_EMAIL_OK] Código enviado para {to_email}")
+
+    except Exception as e:
+        autenticidade_logger.error(
+            f"[2FA_EMAIL_ERROR] Falha ao enviar 2FA para '{to_email}': {e}"
+        )

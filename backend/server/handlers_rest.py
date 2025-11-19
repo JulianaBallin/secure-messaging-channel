@@ -5,7 +5,17 @@ from sqlalchemy.orm import Session
 from backend.server.handlers import handle_register, handle_login
 from backend.auth.auth_jwt import create_access_token
 from backend.database.connection import SessionLocal
+from sqlalchemy.orm import object_session
 import ssl
+from backend.auth.models import User
+from backend.auth.security import (
+    verificar_senha,
+    generate_2fa_code,
+    create_and_store_2fa,
+    send_2fa_email,
+    verify_2fa_code,
+)
+from backend.server.handlers import handle_login
 
 TCP_HOST = "0.0.0.0"
 TCP_PORT = 8888
@@ -73,3 +83,53 @@ async def handle_login_rest(db: Session, creds: dict):
         print(f"[REST LOGIN WARNING] Não foi possível notificar TCP server: {e}")
 
     return {"status": "ok", "username": username, "token": token}, token
+
+# ------------------------------
+# LOGIN (STEP 1) – Verifica senha e inicia 2FA
+# ------------------------------
+async def handle_login_step1_rest(db: Session, creds: dict):
+    username = creds.get("username")
+    password = creds.get("password")
+
+    user = db.query(User).filter(User.username == username).first()
+    if not user or not verificar_senha(password, user.password_hash):
+        return {"status": "error", "message": "Credenciais inválidas"}, None
+
+    # Se o usuário já verificou 2FA recentemente, pode logar direto
+    if user.twofa_verified:
+        token = create_access_token(username)
+        return {"status": "ok", "username": username, "token": token}, token
+
+    # Gera código, salva hash + expiração e pega código real
+    code = create_and_store_2fa(db, user)
+
+    # Envia email com o código real
+    send_2fa_email(user.email, code)
+
+
+    # FRONT-END ESPERA "2fa_required"
+    return {"status": "2fa_required", "username": username}, None
+
+
+# ------------------------------
+# LOGIN (STEP 2) – Valida 2FA e finaliza login
+# ------------------------------
+async def handle_login_step2_rest(db: Session, creds: dict):
+    username = creds.get("username")
+    code = creds.get("code")
+
+    user = db.query(User).filter(User.username == username).first()
+    if not user:
+        return {"status": "error", "message": "Usuário não encontrado"}, None
+
+    # Valida 2FA (já marca verified e já comita)
+    if not verify_2fa_code(user, code):
+        return {"status": "error", "message": "Código inválido ou expirado"}, None
+
+    token = create_access_token(username)
+
+    return {
+        "status": "ok",
+        "username": username,
+        "token": token
+    }, token

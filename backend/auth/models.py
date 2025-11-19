@@ -37,6 +37,12 @@ class User(Base):
     public_key: Mapped[bytes] = mapped_column(LargeBinary, nullable=True)
     is_online: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(manaus_tz), nullable=False)
+    email: Mapped[str] = mapped_column(String(120), unique=True, nullable=False)
+
+    # 2FA
+    twofa_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    twofa_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    twofa_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Relacionamentos com cascata total
     sent_messages: Mapped[list["Message"]] = relationship(

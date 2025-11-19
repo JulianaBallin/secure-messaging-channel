@@ -11,6 +11,7 @@ import { fetchJSON } from "@/lib/utils";
 export default function SignupPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
@@ -49,7 +50,7 @@ export default function SignupPage() {
       // 🚀 4️⃣ Envia o cadastro pro backend
       await fetchJSON("/api/register", {
         method: "POST",
-        body: JSON.stringify({ username, password, public_key: pubPem }),
+        body: JSON.stringify({ username, password, email, public_key: pubPem }),
       });
 
       setOk("Conta criada! Faça login.");
@@ -69,6 +70,7 @@ export default function SignupPage() {
           <h1 className="text-3xl font-semibold text-center text-gray-800">📝 Criar Conta</h1>
           <div className="space-y-3">
             <Input placeholder="Usuário" value={username} onChange={(e) => setUsername(e.target.value)} />
+            <Input placeholder="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)}/>
             <Input placeholder="Senha" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
           </div>
           {error && <p className="text-red-600 text-sm text-center">{error}</p>}

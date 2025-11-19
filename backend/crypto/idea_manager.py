@@ -3,7 +3,6 @@ from backend.crypto.rsa_manager import RSAManager
 from backend.utils.logger_config import (
     individual_chat_logger, 
     group_chat_logger, 
-    confidencialidade_logger,
     confidencialidade_chat_individual_logger,
     confidencialidade_chat_grupo_logger
 )
@@ -459,10 +458,6 @@ class IDEAManager:
         """Gera chave IDEA de 128 bits e loga fingerprint SHA256."""
         import os
         key_bytes = os.urandom(16)
-        from hashlib import sha256
-        from backend.utils.logger_config import confidencialidade_logger
-
         fingerprint = sha256(key_bytes).hexdigest()
-        confidencialidade_logger.info(f"[GENERATE_IDEA_KEY] Chave IDEA gerada | SHA256={fingerprint}")
         return key_bytes
 

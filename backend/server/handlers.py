@@ -14,6 +14,7 @@ from backend.crypto.rsa_manager import RSAManager
 from backend.crypto.idea_manager import IDEAManager
 from backend.utils.log_formatter import format_box
 from backend.database.connection import SessionLocal
+from sqlalchemy.orm import object_session
 
 # ======================================================
 # LOCK GLOBAL DE USUÁRIOS
@@ -25,6 +26,7 @@ async def handle_register(db: Session, writer, creds: dict) -> None:
     username = creds.get("username")
     hashed_password = creds.get("password")
     public_key_pem = creds.get("public_key")
+    email = creds.get("email")
 
     if not username or not hashed_password:
         writer.write("❌ Dados incompletos.\n".encode())
@@ -43,6 +45,7 @@ async def handle_register(db: Session, writer, creds: dict) -> None:
             username=username,
             password_hash=hashed_password,
             public_key=public_key_pem.encode(),
+            email=email
         )
         db.add(new_user)
         db.commit()
