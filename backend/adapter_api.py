@@ -3,6 +3,7 @@ import os
 import ssl
 import json
 import time
+import re
 from hashlib import sha256
 from typing import Dict, TypedDict, Optional
 from fastapi import FastAPI, HTTPException, Request
@@ -176,6 +177,15 @@ class RemoveMemberReq(BaseModel):
 # ======================================================
 @app.post("/api/register")
 async def api_register(req: AuthRequest):
+    def validar_senha(password: str) -> bool:
+        """Política de senha segura."""
+        return (
+            len(password) >= 8
+            and re.search(r"[A-Z]", password)
+            and re.search(r"[0-9]", password)
+            and re.search(r"[^A-Za-z0-9]", password)
+        )
+
     db = SessionLocal()
     private_key_path = None
     try:
@@ -183,6 +193,14 @@ async def api_register(req: AuthRequest):
         existing_user = db.query(User).filter(User.username == req.username).first()
         if existing_user:
             raise HTTPException(status_code=400, detail="Usuário já existe.")
+        
+        senha_valida = validar_senha(req.password)
+
+        if not senha_valida:
+            raise HTTPException(
+                status_code=422, 
+                detail="A senha deve ter pelo menos 8 caracteres, 1 maiúscula, 1 número e 1 caractere especial."
+            )
 
         # 2️⃣ Gera par de chaves
         privada_pem_str, publica_pem_str = RSAManager.gerar_par_chaves()
