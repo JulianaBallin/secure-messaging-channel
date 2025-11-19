@@ -435,7 +435,7 @@ async def api_inbox_contact(username: str, contact: str):
 
             sender_id = msg.sender_id
             receiver_id = msg.receiver_id
-            msg_hash = msg.content_hash
+            msg_hash = msg.content_encrypted
 
             try:
                 if not is_outgoing:
@@ -564,7 +564,7 @@ async def api_send_message(req: Request):
         integridade_logger.info(f"[PRIVATE SEND] Mensagem enviada ([{sender_user.username}]->[{receiver.username}]):")
         integridade_logger.info(f"          └─ Id do remetente: {sender_user.id}")
         integridade_logger.info(f"          └─ Id do destinatário: {receiver.id}")
-        integridade_logger.info(f"          └─ Hash da mensagem enviada: {content_hash}")
+        integridade_logger.info(f"          └─ Hash da mensagem enviada: {content_encrypted_b64}")
         
         # 🚀 Retorna resposta imediatamente (libera botão "Enviando...")
         message_id = message_to_receiver.id
