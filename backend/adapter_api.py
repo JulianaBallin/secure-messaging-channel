@@ -185,11 +185,9 @@ async def api_register(req: AuthRequest):
         # 2️⃣ Gera par de chaves
         privada_pem_str, publica_pem_str = RSAManager.gerar_par_chaves()
 
-        # 3️⃣ Salvar chave privada em keys/{username}/
-        # raiz do projeto
-        PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-        # pasta keys/ sem subpastas
-        user_keys_dir = os.path.join(PROJECT_ROOT, "keys")
+        # 3️⃣ Salvar chave privada em backend/keys/{username}/
+        BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+        user_keys_dir = os.path.join(BACKEND_DIR, "keys", req.username)
         os.makedirs(user_keys_dir, exist_ok=True)
         
         private_key_path = os.path.join(user_keys_dir, f"{req.username}_private.pem")
@@ -297,7 +295,7 @@ async def api_inbox(username: str):
         # 🔑 Ler chave privada de keys/{username}/
         BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
         user_keys_dir = os.path.join(BACKEND_DIR, "keys", username)
-        priv_path = os.path.join("keys", f"{username}_private.pem")
+        priv_path = os.path.join(user_keys_dir, f"{username}_private.pem")
         try:
             with open(priv_path, "r") as f:
                 private_key_pem = f.read()
@@ -367,7 +365,7 @@ async def api_inbox_contact(username: str, contact: str):
         # 🔑 Ler chave privada keys/{username}/
         BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
         user_keys_dir = os.path.join(BACKEND_DIR, "keys", username)
-        priv_path = os.path.join("keys", f"{username}_private.pem")
+        priv_path = os.path.join(user_keys_dir, f"{username}_private.pem")
 
         try:
             with open(priv_path, "r") as f:
@@ -1261,11 +1259,7 @@ async def api_groups_messages(group_name: str, token: str):
 
         msgs = (
             db.query(Message)
-            .filter(Message.group_id == group.id)
-            .filter(
-                (Message.receiver_id == user.id) |
-                (Message.sender_id == user.id)
-            )
+            .filter(Message.group_id == group.id, Message.receiver_id == user.id)
             .order_by(Message.timestamp.asc())
             .all()
         )
@@ -1273,7 +1267,7 @@ async def api_groups_messages(group_name: str, token: str):
         # 🔑 Ler chave privada de keys/{username}/
         BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
         user_keys_dir = os.path.join(BACKEND_DIR, "keys", user_name)
-        priv_path = os.path.join("keys", f"{user_name}_private.pem")
+        priv_path = os.path.join(user_keys_dir, f"{user_name}_private.pem")
         try:
             with open(priv_path, "r") as f:
                 private_key_pem = f.read()
