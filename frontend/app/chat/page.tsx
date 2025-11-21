@@ -1,3 +1,4 @@
+// frontend/app/chat/page.tsx
 "use client";
 
 import { useEffect, useState, useRef } from "react";
@@ -50,11 +51,16 @@ export default function ChatPage() {
   const token =
     typeof window !== "undefined" ? localStorage.getItem("token") : null;
 
-  // 🔐 login check
+  // 🔐 login check - CORREÇÃO: Verificar token também
   useEffect(() => {
     const u = localStorage.getItem("username");
-    if (!u) router.push("/login");
-    else setUser(u);
+    const t = localStorage.getItem("token");
+    
+    if (!u || !t) {
+      router.push("/login");
+    } else {
+      setUser(u);
+    }
   }, [router]);
 
   // =======================================================
@@ -72,7 +78,12 @@ export default function ChatPage() {
   };
 
   const loadUnread = async () => {
-    if (!user) return;
+    // CORREÇÃO: Verificar se user existe antes de fazer a requisição
+    if (!user) {
+      console.log("User não definido, pulando loadUnread");
+      return;
+    }
+    
     try {
       const data = await fetchJSON(`/api/unread/${user}`);
       const map: Record<string, number> = {};
@@ -86,7 +97,6 @@ export default function ChatPage() {
   };
 
   const scrollToBottom = () => {
-    // Evita rolagem forçada em loop
     requestAnimationFrame(() =>
       bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
     );
@@ -95,17 +105,30 @@ export default function ChatPage() {
   // Atualiza apenas quando há um contato selecionado
   useEffect(() => {
     if (mode !== "private" || !user || !receiver) return;
-    loadInboxFor(receiver); // chama a versão que recebe o contato
-    const id = setInterval(() => loadInboxFor(receiver), 2000); // menor delay, mas controlado
+    loadInboxFor(receiver);
+    const id = setInterval(() => loadInboxFor(receiver), 2000);
     return () => clearInterval(id);
   }, [user, mode, receiver]);
 
+  // CORREÇÃO: useEffect para carregar unread apenas quando user estiver definido
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      console.log("User não definido, não iniciando intervalo de unread");
+      return;
+    }
+    
+    // Carregar imediatamente
     loadUnread();
+    
+    // Configurar intervalo apenas se user estiver definido
     const id = setInterval(loadUnread, 2000);
-    return () => clearInterval(id);
-  }, [user]);
+    
+    // Cleanup
+    return () => {
+      console.log("Limpando intervalo de unread");
+      clearInterval(id);
+    };
+  }, [user]); // Dependência apenas do user
 
   const sendPrivate = async () => {
     if (!user || !receiver || !text.trim()) {
@@ -123,7 +146,6 @@ export default function ChatPage() {
         }),
       });
 
-      // espelha localmente (mirroring)
       setMessages((prev) => [
         ...prev,
         {
@@ -189,7 +211,6 @@ export default function ChatPage() {
         }),
       });
 
-      // eco local
       setGroupMessages((prev) => [
         ...prev,
         {
@@ -241,7 +262,6 @@ export default function ChatPage() {
     }
   };
 
-  // 🔽 Remove membro
   const removeMember = async () => {
     if (!selectedGroup || !newMember.trim() || !token) return;
     try {
@@ -261,11 +281,21 @@ export default function ChatPage() {
     }
   };
 
-
   // =======================================================
   // UI
   // =======================================================
-  if (!user) return null;
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
+        <Card className="w-full max-w-md shadow-lg border border-gray-200 rounded-2xl">
+          <CardContent className="p-6 text-center">
+            <h1 className="text-xl font-semibold text-gray-800">Carregando...</h1>
+            <p className="text-gray-600 mt-2">Verificando autenticação</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200">
@@ -320,7 +350,6 @@ export default function ChatPage() {
                     variant="outline"
                     onClick={async () => {
                       const data = await fetchJSON(`/api/users/all`);
-                      // filtra o próprio usuário
                       const filtered = data.users.filter((u: string) => u !== user);
                       setContacts(filtered);
                     }}
@@ -340,14 +369,13 @@ export default function ChatPage() {
                         onClick={() => {
                           setReceiver(c);
                           loadInboxFor(c);
-                          loadUnread(); // limpa o unread após abrir o chat
+                          loadUnread();
                         }}
                         className={`w-full text-left px-3 py-2 flex justify-between items-center hover:bg-gray-200 ${
                           receiver === c ? "bg-blue-100 font-semibold" : ""
                         }`}
                       >
                         <span>{c}</span>
-
                         {unreadMap[c] > 0 && (
                           <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full">
                             {unreadMap[c]}
@@ -432,7 +460,6 @@ export default function ChatPage() {
             </div>
           )}
 
-
           {/* GRUPOS */}
           {mode === "group" && (
             <>
@@ -487,7 +514,6 @@ export default function ChatPage() {
                     </Button>
                   )}
                   
-                  {/* Só mostra ferramentas de admin se AINDA está no grupo */}
                   {isAdmin && groups.some(g => g.name === selectedGroup) && (
                     <div className="flex flex-wrap gap-2 mb-2">
                       <Input
@@ -509,7 +535,6 @@ export default function ChatPage() {
                     </div>
                   )}
 
-                  {/* Só mostra botão de sair se AINDA está no grupo */}
                   {groups.some(g => g.name === selectedGroup) && (
                     <div className="mt-2">
                       <Button
@@ -541,7 +566,6 @@ export default function ChatPage() {
                     </div>
                   )}
 
-                  {/* 🔥 MENSAGENS DO GRUPO – sempre aparecem, mesmo se saiu */}
                   <div className="h-80 overflow-y-auto bg-white border rounded-xl p-4 space-y-3">
                     {groupMessages.length === 0 && (
                       <p className="text-sm text-gray-500 text-center">
@@ -580,7 +604,6 @@ export default function ChatPage() {
                     <div ref={bottomRef} />
                   </div>
 
-                  {/* 🔥 INPUT – só aparece se ainda for membro */}
                   {groups.some(g => g.name === selectedGroup) && (
                     <div className="flex gap-2">
                       <Input

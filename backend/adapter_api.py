@@ -10,6 +10,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import func 
+from pydantic import BaseModel, EmailStr, validator
+import re
 
 from backend.database.connection import SessionLocal
 from backend.server.handlers_rest import handle_register_rest, handle_login_rest
@@ -159,6 +161,20 @@ class RegisterRequest(BaseModel):
     password: str
     email: str
 
+    @validator('username')
+    def validate_username(cls, v):
+        if len(v) < 3:
+            raise ValueError('O usuário deve ter pelo menos 3 caracteres')
+        if not re.match(r'^[a-zA-Z0-9_]+$', v):
+            raise ValueError('O usuário deve conter apenas letras, números e underscores')
+        return v
+
+    @validator('email')
+    def validate_email(cls, v):
+        if not validate_email(v):  # Usando a função que criamos acima
+            raise ValueError('Email inválido. Use um provedor de email válido.')
+        return v
+
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -186,6 +202,133 @@ class TwoFARequest(BaseModel):
 # ======================================================
 # 👤 REGISTRO E LOGIN
 # ======================================================
+# backend/adapter_api.py (adicionar esta função antes do endpoint /api/register)
+
+def validate_email(email: str) -> bool:
+    """Valida o formato e domínio do email"""
+    # Regex básica para formato de email
+    email_regex = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    
+    if not re.match(email_regex, email):
+        return False
+    
+    # Lista de domínios de email válidos
+    valid_domains = [
+        'gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'icloud.com',
+        'protonmail.com', 'aol.com', 'zoho.com', 'yandex.com', 'mail.com',
+        'gmx.com', 'live.com', 'msn.com', 'bol.com.br', 'uol.com.br',
+        'terra.com.br', 'ig.com.br', 'r7.com', 'globo.com', 'oi.com.br',
+        'zipmail.com.br', 'folha.com.br', 'osite.com.br', 'empresarial.com',
+        'fastmail.com', 'tutanota.com', 'hey.com', 'pm.me'
+    ]
+    
+    domain = email.split('@')[1].lower()
+    return domain in valid_domains
+
+
+@app.post("/api/register")
+async def api_register(req: RegisterRequest):
+    def validar_senha(password: str) -> bool:
+        """Política de senha segura."""
+        return (
+            len(password) >= 8
+            and re.search(r"[A-Z]", password)
+            and re.search(r"[0-9]", password)
+            and re.search(r"[^A-Za-z0-9]", password)
+        )
+
+    # CORREÇÃO: Validação do email antes de qualquer processamento
+    if not validate_email(req.email):
+        raise HTTPException(
+            status_code=400, 
+            detail="Email inválido. Use um provedor de email válido (ex: Gmail, Yahoo, Outlook, etc.)."
+        )
+
+    db = SessionLocal()
+    private_key_path = None
+    try:
+        # 1️⃣ Verifica se o usuário já existe ANTES de gerar chaves
+        existing_user = db.query(User).filter(User.username == req.username).first()
+        if existing_user:
+            raise HTTPException(status_code=400, detail="Usuário já existe.")
+        
+        # 2️⃣ Verifica se o email já está em uso
+        existing_email = db.query(User).filter(User.email == req.email).first()
+        if existing_email:
+            raise HTTPException(status_code=400, detail="Email já cadastrado.")
+        
+        senha_valida = validar_senha(req.password)
+
+        if not senha_valida:
+            raise HTTPException(
+                status_code=422, 
+                detail="A senha deve ter pelo menos 8 caracteres, 1 maiúscula, 1 número e 1 caractere especial."
+            )
+
+        # 3️⃣ Gera par de chaves
+        privada_pem_str, publica_pem_str = RSAManager.gerar_par_chaves()
+
+        # 4️⃣ Salvar chave privada em backend/keys/{username}/
+        BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+        user_keys_dir = os.path.join(BACKEND_DIR, "keys", req.username)
+        os.makedirs(user_keys_dir, exist_ok=True)
+        
+        private_key_path = os.path.join(user_keys_dir, f"{req.username}_private.pem")
+        
+        with open(private_key_path, "w", encoding="utf-8") as f:
+            f.write(privada_pem_str)
+        os.chmod(private_key_path, 0o600)
+        print(f"🔑 Chave privada salva em: {private_key_path}")
+
+        # 5️⃣ Prepara dados do usuário
+        hashed_password = hash_password(req.dict().get("password"))
+
+        user_data = {
+            "username": req.username,
+            "password": hashed_password,
+            "public_key": publica_pem_str,
+            "email": req.email
+        }
+
+        # 6️⃣ Registra o usuário no banco
+        result = await handle_register_rest(db, user_data)
+        
+        # Se o registro falhar, remove a chave privada que foi salva
+        if result.get("status") == "error":
+            if private_key_path and os.path.exists(private_key_path):
+                try:
+                    os.remove(private_key_path)
+                    # Remove o diretório se estiver vazio
+                    if os.path.exists(user_keys_dir):
+                        try:
+                            os.rmdir(user_keys_dir)
+                        except OSError:
+                            pass  # Diretório não está vazio, tudo bem
+                except Exception as e:
+                    print(f"⚠️ Erro ao remover chave privada após falha no registro: {e}")
+            raise HTTPException(status_code=400, detail=result.get("message", "Erro ao registrar usuário."))
+        
+        return result
+    except HTTPException:
+        # Re-lança HTTPException sem modificar
+        raise
+    except Exception as e:
+        # Se ocorrer qualquer erro, tenta limpar a chave privada que foi salva
+        if private_key_path and os.path.exists(private_key_path):
+            try:
+                os.remove(private_key_path)
+                user_keys_dir = os.path.dirname(private_key_path)
+                if os.path.exists(user_keys_dir):
+                    try:
+                        os.rmdir(user_keys_dir)
+                    except OSError:
+                        pass
+            except Exception:
+                pass
+        raise HTTPException(status_code=500, detail=f"Erro ao registrar: {str(e)}")
+    finally:
+        db.close()
+
 @app.post("/api/register")
 async def api_register(req: RegisterRequest):
     def validar_senha(password: str) -> bool:
